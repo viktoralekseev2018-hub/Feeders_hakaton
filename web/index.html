@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>«Последний экипаж» — Космическая научно-образовательная станция</title>
+    <title>ХроноГрад VR — Интерактивный мир истории и науки</title>
     <link rel="stylesheet" href="/css/style.css">
     
     <!-- Нативный браузерный Import Map для Three.js без внешних сборщиков -->
@@ -26,102 +26,52 @@
     <!-- UI контейнер поверх 3D -->
     <div id="ui-container">
         
-        <!-- Баннер тревоги / Авто-переподключение при обрыве связи -->
-        <div id="connection-alert-banner" class="connection-alert-banner hidden">
-            <div class="alert-content">
-                <span class="alert-icon">⚠️</span>
-                <div class="alert-text">
-                    <div class="alert-title">СВЯЗЬ С СЕРВЕРОМ СТАНЦИИ ПОТЕРЯНА</div>
-                    <div class="alert-sub" id="reconnect-status-text">Авто-переподключение...</div>
-                </div>
-                <button class="reconnect-btn" id="reconnect-now-btn">Повторить сейчас</button>
-            </div>
-        </div>
-
-        <!-- HUD Панель (Левый верхний угол) -->
+        <!-- HUD Панель -->
         <div id="hud-overlay">
             <div class="hud-pill" id="lan-status-pill">
                 <span class="status-dot" id="lan-status-dot"></span>
                 <span id="lan-status-text">LAN: Оффлайн</span>
             </div>
             <div class="hud-pill" id="player-info-pill" style="display: none;">
-                <span>Экипаж: <b id="hud-username">Гость</b></span>
+                <span>Игрок: <b id="hud-username">Гость</b></span>
             </div>
             <div class="hud-pill" id="pos-info-pill" style="display: none;">
                 <span id="hud-coords">X: 0.0 | Y: 1.7 | Z: 0.0</span>
             </div>
         </div>
 
-        <!-- Телеметрия состояния космической станции «Гелиос-7» -->
-        <div id="station-telemetry-hud" class="station-telemetry-hud" style="display: none;">
-            <div class="telemetry-header">
-                <span class="telemetry-station-name">СТАНЦИЯ «ГЕЛИОС-7»</span>
-                <span class="telemetry-blink">ТРЕВОГА</span>
-            </div>
-            <div class="telemetry-row">
-                <span class="t-label">O2 (Кислород):</span>
-                <div class="t-bar-bg"><div class="t-bar-fill o2" style="width: 68%;"></div></div>
-                <span class="t-val">68%</span>
-            </div>
-            <div class="telemetry-row">
-                <span class="t-label">Энергия сети:</span>
-                <div class="t-bar-bg"><div class="t-bar-fill power" style="width: 40%;"></div></div>
-                <span class="t-val">40%</span>
-            </div>
-            <div class="telemetry-row">
-                <span class="t-label">Целостность:</span>
-                <div class="t-bar-bg"><div class="t-bar-fill hull" style="width: 82%;"></div></div>
-                <span class="t-val">82%</span>
-            </div>
-        </div>
-
-        <!-- Плавающая подсказка взаимодействия (Proximity Pill) -->
-        <div id="interaction-pill" class="interaction-pill hidden">
-            <kbd class="key-e">E</kbd>
-            <span id="interaction-label">Взаимодействовать</span>
-        </div>
-
         <!-- Подсказка по управлению -->
         <div id="controls-hint" style="display: none;">
-            <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Перемещение | <kbd>Мышь</kbd> Обзор | <kbd>Shift</kbd> Бег | <kbd>E</kbd> Разговор с экипажем | Клик для захвата
+            <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Перемещение | <kbd>Мышь</kbd> Обзор | <kbd>Shift</kbd> Бег | Клик для захвата
         </div>
 
-        <!-- Экран входа / Авторизации члена экипажа -->
+        <!-- Экран входа / Авторизации -->
         <div class="modal-overlay" id="auth-modal">
             <div class="auth-card">
-                <span class="brand-badge">Станция «Гелиос-7»</span>
-                <h1 class="auth-title">Последний экипаж</h1>
-                <p class="auth-subtitle">Связи с Землёй нет. Исследуй отсеки, восстанови энергию, спаси биосферу.</p>
+                <span class="brand-badge">Образовательный мир</span>
+                <h1 class="auth-title">ХроноГрад VR</h1>
+                <p class="auth-subtitle">Исследуй, общайся, делай открытия вместе</p>
 
                 <div class="tab-switcher">
-                    <button class="tab-btn active" id="tab-login-btn">Вход в систему</button>
-                    <button class="tab-btn" id="tab-register-btn">Регистрация в журнале</button>
+                    <button class="tab-btn active" id="tab-login-btn">Вход</button>
+                    <button class="tab-btn" id="tab-register-btn">Регистрация</button>
                 </div>
 
                 <form class="auth-form" id="auth-form" onsubmit="return false;">
                     <div class="input-group">
-                        <label for="auth-username">Позывной исследователя (Никнейм)</label>
-                        <input type="text" id="auth-username" placeholder="Например: AstroPioneer" required autocomplete="username">
+                        <label for="auth-username">Имя пользователя (Никнейм)</label>
+                        <input type="text" id="auth-username" placeholder="Например: Explorer" required autocomplete="username">
                     </div>
                     
                     <div class="input-group">
-                        <label for="auth-password">Код доступа (Пароль)</label>
+                        <label for="auth-password">Пароль</label>
                         <input type="password" id="auth-password" placeholder="••••••••" required autocomplete="current-password">
                     </div>
 
-                    <button type="submit" class="submit-btn" id="auth-submit-btn">Пробуждение в отсеке</button>
+                    <button type="submit" class="submit-btn" id="auth-submit-btn">Войти в мир</button>
                     
                     <div class="auth-feedback" id="auth-feedback"></div>
                 </form>
-            </div>
-        </div>
-
-        <!-- Эффект плавного пробуждения из криокапсулы (Awakening Transition) -->
-        <div id="awakening-overlay" class="awakening-overlay hidden">
-            <div class="awakening-box">
-                <div class="awakening-pulse"></div>
-                <h2>ПРОБУЖДЕНИЕ В КРИОКАПСУЛЕ...</h2>
-                <p>Нейроинтерфейс подключен. Системы жизнеобеспечения онлайн.</p>
             </div>
         </div>
 

@@ -5,26 +5,18 @@ import { AuthModal } from './ui/AuthModal.js';
 import { ChunkCacheManager } from './world/ChunkCacheManager.js';
 import { RemotePlayerManager } from './render/RemotePlayerManager.js';
 import { DebugAuditPanel } from './ui/DebugAuditPanel.js';
-import { CrewManager } from './crew/CrewManager.js';
-import { DialogueModal } from './ui/DialogueModal.js';
 
 /**
  * main.js
- * Точка входа Three.js клиентского приложения научно-образовательной платформы «Последний экипаж».
+ * Точка входа клиентского приложения Three.js для образовательного мира «ХроноГрад VR».
  * 
- * Предметная область: энергия, экология замкнутых систем и основы космонавтики.
- * 
- * Реализовано в этапе 3:
- * 1. Полный Sci-Fi ретеминг космической станции «Гелиос-7».
- * 2. Три уникальных ИИ-члена экипажа (Инженер Марк Вэнс, Биолог Елена Ростова, Капитан Александр Волк)
- *    с процедурными 3D-моделями скафандров, уникальным характером и позицией в энергетической дилемме.
- * 3. Спавн игрока в криокапсуле с плавным визуальным пробуждением и применением координат от сервера.
- * 4. Баннер аварийного обрыва связи с авто-переподключением (Exponential Backoff + таймер обратного отсчета).
- * 5. Интерактивная 3D proximity-система диалогов по клавише [E].
- * 6. HUD телеметрии систем жизнеобеспечения (O2, Энергия, Корпус).
- * 7. Сохранение строгого LRU-кэша C <= 10% W с утилизацией через .dispose().
+ * Этап 2:
+ * 1. Стриминг чанков мира (сетка 20х20м).
+ * 2. Жесткий LRU-кэш на клиенте: C <= 10% W (рабочий бюджет 8% W) с утилизацией через .dispose().
+ * 3. Отображение других игроков с LERP-интерполяцией (буфер 100 мс).
+ * 4. Панель аудита метрик кэша для жюри и разработчиков.
  */
-class LastCrewApp {
+class ChronogradApp {
     constructor() {
         this.canvas = document.getElementById('webgl-canvas');
         this.clock = new THREE.Clock();
@@ -34,17 +26,13 @@ class LastCrewApp {
         this.isAuthenticated = false;
         this.currentUser = null;
 
-        // Таймер отправки координат на сервер (15-20 Гц = каждые ~55 мс)
+        // Таймер отправки координат (15-20 Гц = каждые ~55 мс)
         this.lastInputSendTime = 0;
         this.inputSequence = 1;
 
-        // Текущий персонаж рядом
-        this.activeInteractionTarget = null;
-
         this._initThree();
-        this._initSpaceEnvironment();
+        this._initSceneEnvironment();
         this._initWorldAndCache();
-        this._initCrew();
         this._initRemotePlayers();
         this._initControls();
         this._initUI();
@@ -55,7 +43,7 @@ class LastCrewApp {
     }
 
     _initThree() {
-        // WebGL Рендерер
+        // Рендерер
         this.renderer = new THREE.WebGLRenderer({
             canvas: this.canvas,
             antialias: true,
@@ -64,109 +52,107 @@ class LastCrewApp {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 1.1;
+        this.renderer.toneMappingExposure = 1.0;
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-        // Сцена
+        // Сцена с атмосферным туманом (по ТЗ скрывает границы чанков)
         this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x050811);
-        this.scene.fog = new THREE.FogExp2(0x050811, 0.015);
+        this.scene.background = new THREE.Color(0x0a0e14);
+        this.scene.fog = new THREE.FogExp2(0x0a0e14, 0.02);
 
-        // Камера от первого лица
+        // Камера
         this.camera = new THREE.PerspectiveCamera(
             75,
             window.innerWidth / window.innerHeight,
             0.1,
-            600
+            500
         );
-        // Начальная позиция до получения пакета спавна от сервера (в крио-отсеке [-15, 1.7, 0])
-        this.camera.position.set(-15, 1.7, 0);
+        this.camera.position.set(0, 1.7, 5);
 
+        // Слушатель ресайза
         window.addEventListener('resize', () => this._onWindowResize());
     }
 
-    /**
-     * Создание звездного неба и космического освещения
-     */
-    _initSpaceEnvironment() {
-        // Рассеянный свет станции
-        const ambientLight = new THREE.AmbientLight(0x1e293b, 0.7);
+    _initSceneEnvironment() {
+        // Освещение
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
         this.scene.add(ambientLight);
 
-        // Основной направленный источник (свет далекой звезды через иллюминаторы)
-        const starLight = new THREE.DirectionalLight(0xe0f2fe, 1.2);
-        starLight.position.set(30, 50, 40);
-        starLight.castShadow = true;
-        starLight.shadow.mapSize.width = 1024;
-        starLight.shadow.mapSize.height = 1024;
-        this.scene.add(starLight);
+        const sunLight = new THREE.DirectionalLight(0xfff5e6, 1.3);
+        sunLight.position.set(25, 45, 25);
+        sunLight.castShadow = true;
+        sunLight.shadow.mapSize.width = 1024;
+        sunLight.shadow.mapSize.height = 1024;
+        sunLight.shadow.camera.near = 0.5;
+        sunLight.shadow.camera.far = 120;
+        sunLight.shadow.camera.left = -35;
+        sunLight.shadow.camera.right = 35;
+        sunLight.shadow.camera.top = 35;
+        sunLight.shadow.camera.bottom = -35;
+        this.scene.add(sunLight);
 
-        // Локальное янтарное свечение аварийных маяков станции
-        const alertLight = new THREE.PointLight(0xff6b1a, 1.4, 25);
-        alertLight.position.set(14, 3, 0); // В отсеке реактора
-        this.scene.add(alertLight);
+        // Центральный монумент (Обелиск Открытий) на площади [0, 0]
+        const monumentGroup = new THREE.Group();
 
-        // Локальное бирюзовое свечение биокупола
-        const bioLight = new THREE.PointLight(0x06b6d4, 1.2, 25);
-        bioLight.position.set(0, 3, 14); // В оранжерее
-        this.scene.add(bioLight);
+        // Постамент
+        const baseGeo = new THREE.CylinderGeometry(2.5, 3.2, 0.8, 16);
+        const baseMat = new THREE.MeshStandardMaterial({ color: 0x21262d, roughness: 0.5 });
+        const baseMesh = new THREE.Mesh(baseGeo, baseMat);
+        baseMesh.position.y = 0.4;
+        baseMesh.castShadow = true;
+        baseMesh.receiveShadow = true;
+        monumentGroup.add(baseMesh);
 
-        // Звездное поле (частицы далеких звезд в открытом космосе)
-        const starsGeo = new THREE.BufferGeometry();
-        const starsCount = 1500;
-        const positions = new Float32Array(starsCount * 3);
-
-        for (let i = 0; i < starsCount * 3; i += 3) {
-            positions[i] = (Math.random() - 0.5) * 600;
-            positions[i + 1] = Math.random() * 300 + 20; // Выше горизонта
-            positions[i + 2] = (Math.random() - 0.5) * 600;
-        }
-
-        starsGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        const starsMat = new THREE.PointsMaterial({
-            color: 0xffffff,
-            size: 1.2,
-            transparent: true,
-            opacity: 0.85
+        // Светящееся кольцо ХроноГрафа
+        const ringGeo = new THREE.TorusGeometry(1.4, 0.12, 16, 48);
+        const ringMat = new THREE.MeshStandardMaterial({
+            color: 0x3182ce,
+            emissive: 0x2b6cb0,
+            emissiveIntensity: 0.8,
+            roughness: 0.2
         });
+        this.chronoRing = new THREE.Mesh(ringGeo, ringMat);
+        this.chronoRing.position.y = 2.5;
+        this.chronoRing.castShadow = true;
+        monumentGroup.add(this.chronoRing);
 
-        const starField = new THREE.Points(starsGeo, starsMat);
-        this.scene.add(starField);
+        // Парящий кристалл времени
+        const crystalGeo = new THREE.OctahedronGeometry(0.7, 0);
+        const crystalMat = new THREE.MeshStandardMaterial({
+            color: 0x63b3ed,
+            emissive: 0x3182ce,
+            emissiveIntensity: 0.6,
+            roughness: 0.1,
+            metalness: 0.9
+        });
+        this.crystal = new THREE.Mesh(crystalGeo, crystalMat);
+        this.crystal.position.y = 2.5;
+        monumentGroup.add(this.crystal);
+
+        this.scene.add(monumentGroup);
     }
 
     _initWorldAndCache() {
-        // Менеджер отсеков-чанков и строгий кэш C <= 10% W
+        // Менеджер кэша и пространственных чанков
         this.chunkManager = new ChunkCacheManager(this.scene);
+
+        // Загрузка начальных чанков вокруг стартовой точки [0, 0]
         this.chunkManager.updatePlayerPosition(this.camera.position);
     }
 
-    _initCrew() {
-        // Менеджер ИИ-членов экипажа
-        this.crewManager = new CrewManager(this.scene);
-    }
-
     _initRemotePlayers() {
-        // Менеджер других игроков с LERP-интерполяцией (буфер 100 мс)
+        // Менеджер удаленных игроков с LERP-интерполяцией
         this.remotePlayerManager = new RemotePlayerManager(this.scene);
     }
 
     _initControls() {
         this.controls = new PlayerControls(this.camera, document.body);
 
+        // Клик по холсту захватывает курсор, если авторизация пройдена
         this.canvas.addEventListener('click', () => {
-            if (this.isAuthenticated && !this.dialogueModal?.isOpen) {
+            if (this.isAuthenticated) {
                 this.controls.lock();
-            }
-        });
-
-        // Клавиша взаимодействия E
-        window.addEventListener('keydown', (e) => {
-            if (e.code === 'KeyE' && this.isAuthenticated) {
-                if (this.activeInteractionTarget && !this.dialogueModal.isOpen) {
-                    this.controls.unlock();
-                    this.dialogueModal.open(this.activeInteractionTarget);
-                }
             }
         });
     }
@@ -176,15 +162,6 @@ class LastCrewApp {
             this._onAuthSuccess(user);
         });
 
-        // Диалоговое окно
-        this.dialogueModal = new DialogueModal(this.network, () => {
-            // При закрытии диалога восстанавливаем захват мыши
-            if (this.isAuthenticated) {
-                setTimeout(() => this.controls.lock(), 150);
-            }
-        });
-
-        // Элементы HUD
         this.hudUsername = document.getElementById('hud-username');
         this.hudCoords = document.getElementById('hud-coords');
         this.lanStatusDot = document.getElementById('lan-status-dot');
@@ -192,24 +169,11 @@ class LastCrewApp {
         this.controlsHint = document.getElementById('controls-hint');
         this.playerInfoPill = document.getElementById('player-info-pill');
         this.posInfoPill = document.getElementById('pos-info-pill');
-        this.stationTelemetryHud = document.getElementById('station-telemetry-hud');
-        this.interactionPill = document.getElementById('interaction-pill');
-        this.interactionLabel = document.getElementById('interaction-label');
-        this.awakeningOverlay = document.getElementById('awakening-overlay');
-
-        // Баннер авто-переподключения
-        this.connectionBanner = document.getElementById('connection-alert-banner');
-        this.reconnectStatusText = document.getElementById('reconnect-status-text');
-        this.reconnectNowBtn = document.getElementById('reconnect-now-btn');
-
-        if (this.reconnectNowBtn) {
-            this.reconnectNowBtn.addEventListener('click', () => {
-                this.network.reconnectNow();
-            });
-        }
 
         // Панель аудита кэша (ТЗ <= 10%)
         this.auditPanel = new DebugAuditPanel(this.chunkManager);
+
+        // Кнопка теста смены чанка (демонстрация жюри вытеснения по LRU)
         this.auditPanel.onTestEvictionRequested = () => {
             this._runCacheEvictionDemo();
         };
@@ -223,51 +187,30 @@ class LastCrewApp {
             this.remotePlayerManager.setLocalPlayerId(user.id);
         }
 
-        console.log('[LastCrewApp] Успешная авторизация члена экипажа:', user.username);
+        console.log('[ChronogradApp] Успешная авторизация игрока:', user.username);
 
-        // Показываем элементы космического HUD
+        // Показываем элементы HUD
         if (this.hudUsername) this.hudUsername.textContent = user.username;
         if (this.playerInfoPill) this.playerInfoPill.style.display = 'inline-flex';
         if (this.posInfoPill) this.posInfoPill.style.display = 'inline-flex';
         if (this.controlsHint) this.controlsHint.style.display = 'block';
-        if (this.stationTelemetryHud) this.stationTelemetryHud.style.display = 'block';
 
-        // Анимация плавного пробуждения в криокапсуле
-        this._triggerAwakeningEffect();
-
-        // Подключаем WebSocket к Go-серверу
+        // Открываем WebSocket-канал на сервере по ТЗ
         this.network.connectWebSocket();
 
-        setTimeout(() => this.controls.lock(), 600);
+        // Захватываем мышь для немедленного погружения
+        setTimeout(() => this.controls.lock(), 300);
 
-        // Демо-игрок для визуальной проверки LERP при оффлайн-разработке
+        // Если режим оффлайн/демо, добавляем демонстрационного второго игрока для проверки LERP
         if (this.network.currentUser && this.network.currentUser.id.startsWith('local_')) {
             this._spawnDemoRemotePlayer();
         }
-    }
-
-    /**
-     * Эффект пробуждения из криокапсулы (Awakening Transition)
-     */
-    _triggerAwakeningEffect() {
-        if (!this.awakeningOverlay) return;
-        this.awakeningOverlay.classList.remove('hidden');
-
-        setTimeout(() => {
-            this.awakeningOverlay.classList.add('hidden');
-        }, 1600);
     }
 
     _initNetworkListeners() {
         this.network.on('connect', () => {
             if (this.lanStatusDot) this.lanStatusDot.classList.add('online');
             if (this.lanStatusText) this.lanStatusText.textContent = 'LAN: Онлайн';
-            if (this.connectionBanner) this.connectionBanner.classList.add('hidden');
-        });
-
-        this.network.on('reconnected', () => {
-            console.log('[LastCrewApp] Связь со станцией успешно восстановлена!');
-            if (this.connectionBanner) this.connectionBanner.classList.add('hidden');
         });
 
         this.network.on('disconnect', () => {
@@ -275,67 +218,50 @@ class LastCrewApp {
             if (this.lanStatusText) this.lanStatusText.textContent = 'LAN: Оффлайн';
         });
 
-        // Обработка статуса авто-переподключения
-        this.network.on('reconnecting', (info) => {
-            if (this.connectionBanner) {
-                this.connectionBanner.classList.remove('hidden');
-                if (this.reconnectStatusText) {
-                    this.reconnectStatusText.textContent = `Попытка #${info.attempt}. Повтор через ${info.remainingSeconds} сек...`;
-                }
-            }
-        });
-
-        this.network.on('reconnect_tick', (info) => {
-            if (this.reconnectStatusText && this.connectionBanner && !this.connectionBanner.classList.contains('hidden')) {
-                this.reconnectStatusText.textContent = `Повтор через ${info.remainingSeconds} сек...`;
-            }
-        });
-
-        // 1. Слушатель спавна игрока (применение координат сервера)
-        this.network.on('player.spawn', (spawnData) => {
-            console.log('[LastCrewApp] Применение серверной позиции спавна:', spawnData.position);
-            if (spawnData.position) {
-                this.controls.setPosition(
-                    spawnData.position.x,
-                    spawnData.position.y,
-                    spawnData.position.z
-                );
-            }
-            if (typeof spawnData.yaw === 'number') {
-                this.controls.setYaw(spawnData.yaw);
-            }
-            // Актуализируем чанки вокруг полученной позиции
-            this.chunkManager.updatePlayerPosition(this.camera.position);
-        });
-
-        // 2. Слушатель серверных снапшотов мира (world.snapshot)
+        // 1. Слушатель серверных снапшотов (world.snapshot) - ТЗ раздел 4
         this.network.on('world.snapshot', (snapshot) => {
             if (snapshot && snapshot.players) {
                 this.remotePlayerManager.applySnapshot(snapshot.players, snapshot.server_time);
             }
         });
+
+        // 2. Слушатель плана области интереса (world.interest) - ТЗ раздел 5
+        this.network.on('world.interest', (plan) => {
+            if (plan && plan.active_chunks) {
+                // Сервер прислал канонический план видимости
+                // Менеджер кэша актуализирует загруженные ресурсы
+            }
+        });
     }
 
+    /**
+     * Демонстрационный удаленный игрок для визуальной проверки LERP в оффлайне
+     */
     _spawnDemoRemotePlayer() {
-        const demoPlayerId = 'demo_astronaut_alex';
-        const demoUsername = 'Алекс (Инженер-стажер)';
+        const demoPlayerId = 'demo_user_einstein_fan';
+        const demoUsername = 'Алиса (Гость)';
 
+        // Симулируем периодические серверные снапшоты (15 Гц) с плавным движением по кругу
         let angle = 0;
         setInterval(() => {
-            angle += 0.03;
-            const x = Math.cos(angle) * 7;
-            const z = Math.sin(angle) * 7;
+            angle += 0.04;
+            const radius = 8;
+            const x = Math.cos(angle) * radius;
+            const z = Math.sin(angle) * radius;
             const yaw = -angle + Math.PI / 2;
 
             this.remotePlayerManager.applySnapshot([
                 { id: demoPlayerId, name: demoUsername, x, y: 0, z, yaw }
             ], performance.now());
-        }, 66);
+        }, 66); // ~15 Гц
     }
 
+    /**
+     * Быстрое смещение игрока для демонстрации жюри смены чанков и вытеснения по LRU
+     */
     _runCacheEvictionDemo() {
         const curPos = this.controls.getPosition();
-        // Смещение на 25 метров для демонстрации жюри выгрузки отсека
+        // Перемещаем на 25 метров вперед (пересечение границы чанка 20м)
         curPos.z -= 25;
         this.chunkManager.updatePlayerPosition(curPos);
         this.auditPanel.registerEviction();
@@ -353,43 +279,36 @@ class LastCrewApp {
         const delta = this.clock.getDelta();
         const time = this.clock.getElapsedTime();
 
-        // Обновление управления персонажем
-        this.controls.update(delta);
-
-        // Интерполяция удаленных игроков
-        this.remotePlayerManager.update();
-
-        // Позиция игрока
-        const playerPos = this.controls.getPosition();
-
-        // Обновление пространственного кэша отсеков (<= 10% W)
-        this.chunkManager.updatePlayerPosition(playerPos);
-
-        // Обновление ИИ-членов экипажа и проверка близости
-        if (this.crewManager) {
-            const nearest = this.crewManager.update(playerPos, time);
-            this.activeInteractionTarget = nearest;
-
-            // Отображение подсказки взаимодействия [E]
-            if (this.interactionPill && this.interactionLabel) {
-                if (nearest && !this.dialogueModal.isOpen) {
-                    this.interactionLabel.textContent = `Поговорить: ${nearest.name} (${nearest.role})`;
-                    this.interactionPill.classList.remove('hidden');
-                } else {
-                    this.interactionPill.classList.add('hidden');
-                }
-            }
+        // Анимация декоративного монумента
+        if (this.chronoRing) {
+            this.chronoRing.rotation.x = time * 0.5;
+            this.chronoRing.rotation.y = time * 0.7;
+        }
+        if (this.crystal) {
+            this.crystal.rotation.y = -time * 1.0;
+            this.crystal.position.y = 2.5 + Math.sin(time * 2.0) * 0.15;
         }
 
-        // Обновление панели аудита для жюри
+        // Обновление физики управления персонажем
+        this.controls.update(delta);
+
+        // Обновление интерполяции удаленных игроков (буфер 100 мс)
+        this.remotePlayerManager.update();
+
+        // Проверка текущего чанка и обновление кэша мира (<= 10%)
+        const playerPos = this.controls.getPosition();
+        this.chunkManager.updatePlayerPosition(playerPos);
+
+        // Обновление данных панели аудита
         if (this.auditPanel) {
             this.auditPanel.update();
         }
 
-        // Обновление координат на HUD и отправка input на сервер
+        // Обновление координат на HUD
         if (this.isAuthenticated && this.hudCoords) {
             this.hudCoords.textContent = `X: ${playerPos.x.toFixed(1)} | Y: ${playerPos.y.toFixed(1)} | Z: ${playerPos.z.toFixed(1)}`;
 
+            // Отправка координат на сервер (15-20 раз в секунду по ТЗ)
             const now = performance.now();
             if (now - this.lastInputSendTime > 55) { // ~18 Гц
                 this.lastInputSendTime = now;
@@ -412,5 +331,5 @@ class LastCrewApp {
 
 // Запуск приложения при загрузке страницы
 window.addEventListener('DOMContentLoaded', () => {
-    new LastCrewApp();
+    new ChronogradApp();
 });

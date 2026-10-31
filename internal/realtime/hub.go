@@ -125,35 +125,6 @@ func (h *Hub) Publish(playerID, kind string, payload any) bool {
 	return c != nil && c.Send(kind, "", payload)
 }
 
-// Broadcast sends a server event to all connected clients.
-func (h *Hub) Broadcast(kind string, payload any) int {
-	h.mu.Lock()
-	clients := make([]*client, 0, len(h.clients))
-	for _, c := range h.clients {
-		clients = append(clients, c)
-	}
-	h.mu.Unlock()
-
-	sent := 0
-	for _, c := range clients {
-		if c.Send(kind, "", payload) {
-			sent++
-		}
-	}
-	return sent
-}
-
-// ConnectedPlayerIDs returns a list of all currently connected player IDs.
-func (h *Hub) ConnectedPlayerIDs() []string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	ids := make([]string, 0, len(h.clients))
-	for id := range h.clients {
-		ids = append(ids, id)
-	}
-	return ids
-}
-
 func (h *Hub) Close(ctx context.Context) error {
 	h.mu.Lock()
 	h.closing = true
