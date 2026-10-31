@@ -1,5 +1,6 @@
 /** Stable v1 transport contract. Runtime JS client can use JSDoc import types.
  * Phase-2 snapshot/chunk/agent payloads added.
+ * Phase-4 AI agent talk & reply with citations added.
  */
 export const PROTOCOL_VERSION = 1 as const;
 export interface User { id: string; username: string }
@@ -29,14 +30,36 @@ export interface WorldSnapshot {
   players: PlayerSnapshotItem[];
 }
 
+export interface Citation {
+  source_title: string;
+  section: string;
+  excerpt: string;
+  confidence: string;
+}
+
+export interface AgentTalkRequest {
+  player_id?: string;
+  agent_id: string;
+  text: string;
+}
+
+export interface AgentReply {
+  agent_id: string;
+  agent_name: string;
+  text: string;
+  citation?: Citation;
+}
+
 export interface ClientPayloads {
   'player.init': { client_time?: number; username?: string };
   'player.input': PlayerInput;
+  'agent.talk': AgentTalkRequest;
   ping: Record<string, unknown>;
 }
 export interface ServerPayloads {
   'player.ready': { user: User; state: PlayerState; capabilities: Capabilities };
   'world.snapshot': WorldSnapshot;
+  'agent.reply': AgentReply;
   pong: Record<string, unknown>;
   error: ErrorPayload;
 }

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"testing"
 
+	"feeders/internal/agents"
 	"feeders/internal/model"
 	"feeders/internal/storage"
 	"feeders/pkg/protocol"
@@ -58,13 +59,23 @@ func (w *fakeWorld) Leave(ctx context.Context, id string) error {
 	return w.repo.SavePlayer(ctx, w.state)
 }
 
+type fakeAgents struct {
+	called bool
+	reply  agents.Reply
+}
+
+func (fa *fakeAgents) Talk(ctx context.Context, req agents.Request) (agents.Reply, error) {
+	fa.called = true
+	return fa.reply, nil
+}
+
 func TestWorldExtensionAndIdentity(t *testing.T) {
 	repo, err := storage.NewFileStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	w := &fakeWorld{repo: repo}
-	m := New(repo, w, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	m := New(repo, w, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	s := &fakeSession{user: model.User{ID: "trusted-id", Username: "explorer"}}
 	ctx := context.Background()
 	init, _ := protocol.Message("player.init", "init", map[string]string{"username": "spoofed"})
@@ -104,5 +115,40 @@ func TestWorldExtensionAndIdentity(t *testing.T) {
 	state, err := repo.LoadPlayer(ctx, s.user.ID)
 	if err != nil || state.Position.X != 20 || state.LastSeq != 1 {
 		t.Fatalf("saved state: %+v %v", state, err)
+	}
+}
+
+func TestAgentTalkIntegration(t *testing.T) {
+	repo, err := storage.NewFileStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fa := &fakeAgents{
+		reply: agents.Reply{
+			AgentID:   "engineer",
+			AgentName: "Марк Вэнс",
+			Text:      "Импульсный режим 2 Гц снизит нагрузку до 9 МВт.",
+		},
+	}
+
+	m := New(repo, nil, fa, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	s := &fakeSession{user: model.User{ID: "astro-2", Username: "cadet"}}
+	ctx := context.Background()
+
+	msg, _ := protocol.Message("agent.talk", "req-talk-1", map[string]string{
+		"agent_id": "engineer",
+		"text":     "Что делать с реактором?",
+	})
+
+	m.talk(ctx, s, msg)
+
+	if !fa.called {
+		t.Fatal("expected fakeAgents.Talk to be invoked")
+	}
+
+	last := s.messages[len(s.messages)-1]
+	if last.Type != "agent.reply" {
+		t.Fatalf("expected agent.reply, got %s", last.Type)
 	}
 }

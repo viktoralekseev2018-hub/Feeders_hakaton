@@ -1,4 +1,4 @@
-// Package game wires protocol handlers to domain services and simulation loop.
+// Package game wires protocol handlers to domain services, simulation loop and AI agents.
 package game
 
 import (
@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"feeders/internal/agents"
 	"feeders/internal/model"
 	"feeders/internal/realtime"
 	"feeders/internal/storage"
@@ -18,16 +19,18 @@ import (
 type Module struct {
 	players storage.Players
 	world   world.Service
+	agents  agents.Service
 	log     *slog.Logger
 	mu      sync.Mutex
 	ready   map[string]model.PlayerState
 }
 
-// New creates a game module. If worldService is nil, the server runs in scaffold mode.
-func New(players storage.Players, worldService world.Service, log *slog.Logger) *Module {
+// New creates a game module with authoritative world service and local AI agents service.
+func New(players storage.Players, worldService world.Service, agentService agents.Service, log *slog.Logger) *Module {
 	return &Module{
 		players: players,
 		world:   worldService,
+		agents:  agentService,
 		log:     log,
 		ready:   make(map[string]model.PlayerState),
 	}
@@ -36,6 +39,7 @@ func New(players storage.Players, worldService world.Service, log *slog.Logger) 
 func (m *Module) Register(h *realtime.Hub) {
 	h.Handle("player.init", m.init)
 	h.Handle("player.input", m.input)
+	h.Handle("agent.talk", m.talk)
 	h.OnDisconnect(m.leave)
 }
 
@@ -93,7 +97,7 @@ func (m *Module) init(ctx context.Context, s realtime.Session, e protocol.Envelo
 		Capabilities: protocol.Capabilities{
 			Movement: m.world != nil,
 			World:    m.world != nil,
-			Agents:   true,
+			Agents:   m.agents != nil,
 		},
 	})
 }
@@ -133,6 +137,35 @@ func (m *Module) input(ctx context.Context, s realtime.Session, e protocol.Envel
 	m.mu.Lock()
 	m.ready[s.User().ID] = state
 	m.mu.Unlock()
+}
+
+func (m *Module) talk(ctx context.Context, s realtime.Session, e protocol.Envelope) {
+	var input struct {
+		AgentID string `json:"agent_id"`
+		Text    string `json:"text"`
+	}
+	if err := protocol.DecodePayload(e.Payload, &input); err != nil {
+		sendError(s, e, "invalid_payload", "Invalid agent.talk payload")
+		return
+	}
+
+	if m.agents == nil {
+		sendError(s, e, "feature_disabled", "AI agent service is not connected")
+		return
+	}
+
+	reply, err := m.agents.Talk(ctx, agents.Request{
+		PlayerID: s.User().ID,
+		AgentID:  input.AgentID,
+		Text:     input.Text,
+	})
+	if err != nil {
+		m.log.Error("agent talk failure", "agent_id", input.AgentID, "error", err)
+		sendError(s, e, "agent_error", "AI agent was unable to formulate a response")
+		return
+	}
+
+	s.Send("agent.reply", e.RequestID, reply)
 }
 
 func (m *Module) leave(ctx context.Context, user model.User) {
