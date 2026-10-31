@@ -1,4 +1,4 @@
-﻿import { SoundFX } from '../audio/SoundEffects.js';
+import { SoundFX } from '../audio/SoundEffects.js';
 
 /**
  * SurvivalConsole.js
@@ -284,9 +284,18 @@ export class SurvivalConsole {
         if (!this.network) return;
 
         // РЎРёРЅС…СЂРѕРЅРёР·Р°С†РёСЏ РѕР±С‰РµРіРѕ СЃРѕСЃС‚РѕСЏРЅРёСЏ РєРѕСЂР°Р±Р»СЏ РѕС‚ Go-СЃРµСЂРІРµСЂР°
+        // Синхронизация общего состояния корабля от Go-сервера
         this.network.on('game.state', (state) => {
             this.state = state;
             this._render();
+        });
+
+        // Запрос состояния при подключении
+        if (this.network.isConnected) {
+            this.network.send('game.action', { action: 'get_state' });
+        }
+        this.network.on('connect', () => {
+            this.network.send('game.action', { action: 'get_state' });
         });
 
         this.network.on('investigation.result', (res) => {

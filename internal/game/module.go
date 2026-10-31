@@ -107,10 +107,6 @@ func (m *Module) init(ctx context.Context, s realtime.Session, e protocol.Envelo
 		},
 	})
 
-	// Синхронизация общего состояния корабля «Горизонт-7»
-	if m.scenario != nil {
-		s.Send("game.state", e.RequestID, m.scenario.GetState())
-	}
 }
 
 func (m *Module) input(ctx context.Context, s realtime.Session, e protocol.Envelope) {
@@ -188,6 +184,11 @@ func (m *Module) action(ctx context.Context, s realtime.Session, e protocol.Enve
 
 	if m.scenario == nil {
 		sendError(s, e, "feature_disabled", "Scenario engine is not initialized")
+		return
+	}
+
+	if input.Action == "get_state" {
+		s.Send("game.state", e.RequestID, m.scenario.GetState())
 		return
 	}
 
