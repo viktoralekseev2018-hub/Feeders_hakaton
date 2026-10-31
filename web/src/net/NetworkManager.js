@@ -2,13 +2,6 @@
  * NetworkManager.js
  * Сетевой менеджер клиента для взаимодействия с Go-сервером в локальной сети (LAN).
  * Отвечает за HTTP-авторизацию (cookie) и последующее WebSocket-соединение.
- * 
- * Поддерживает:
- * - Вход и регистрацию через HTTP API
- * - Автоматическое переподключение (Auto-reconnect) при обрыве связи с экспоненциальным backoff
- * - Ручной вызов переподключения reconnectNow()
- * - Обработку события спавна игрока (player.spawn) из player.ready.state
- * - Heartbeat ping/pong каждые 10 секунд
  */
 export class NetworkManager {
     constructor() {
@@ -19,15 +12,6 @@ export class NetworkManager {
         this.requestIdCounter = 1;
         this.pingInterval = null;
         this.capabilities = null;
-
-        // Настройки авто-переподключения (Auto-Reconnect)
-        this.autoReconnect = true;
-        this.reconnectAttempts = 0;
-        this.maxReconnectDelayMs = 12000;
-        this.reconnectTimer = null;
-        this.countdownInterval = null;
-        this.isReconnecting = false;
-        this.hasEverConnected = false;
     }
 
     /**
@@ -90,8 +74,6 @@ export class NetworkManager {
             return;
         }
 
-        this._clearReconnectTimers();
-
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.host || 'localhost:8080';
         const wsUrl = `${protocol}//${host}/ws`;
@@ -102,18 +84,9 @@ export class NetworkManager {
             this.socket = new WebSocket(wsUrl);
 
             this.socket.onopen = () => {
-                const wasReconnecting = this.isReconnecting;
                 this.isConnected = true;
-                this.hasEverConnected = true;
-                this.isReconnecting = false;
-                this.reconnectAttempts = 0;
-                this._clearReconnectTimers();
-
                 console.log('[NetworkManager] WebSocket соединение установлено.');
                 this._emit('connect', { user: this.currentUser });
-                if (wasReconnecting) {
-                    this._emit('reconnected', { user: this.currentUser });
-                }
 
                 // Отправляем первичный пакет инициализации игрока по протоколу ТЗ
                 this.send('player.init', {
@@ -128,21 +101,10 @@ export class NetworkManager {
             this.socket.onmessage = (event) => {
                 try {
                     const message = JSON.parse(event.data);
-
-                    if (message.type === 'player.ready' && message.payload) {
+                    if (message.type === 'player.ready') {
                         this.currentUser = message.payload.user;
                         this.capabilities = message.payload.capabilities;
-
-                        // Если сервер вернул сохраненное состояние позиции игрока — отправляем player.spawn
-                        if (message.payload.state && message.payload.state.position) {
-                            this._emit('player.spawn', {
-                                position: message.payload.state.position,
-                                yaw: message.payload.state.yaw || 0,
-                                playerId: message.payload.state.player_id
-                            });
-                        }
                     }
-
                     this._emit('message', message);
                     if (message.type) {
                         this._emit(message.type, message.payload, message);
@@ -158,11 +120,6 @@ export class NetworkManager {
                 this._stopHeartbeat();
                 console.warn(`[NetworkManager] WebSocket закрыт (код: ${event.code}, причина: ${event.reason || 'нет'})`);
                 this._emit('disconnect', { code: event.code, reason: event.reason });
-
-                // Запуск автоматического переподключения
-                if (this.autoReconnect && this.hasEverConnected && event.code !== 1000) {
-                    this._scheduleReconnect();
-                }
             };
 
             this.socket.onerror = (err) => {
@@ -173,67 +130,6 @@ export class NetworkManager {
         } catch (err) {
             console.error('[NetworkManager] Не удалось создать WebSocket:', err);
             this._emit('disconnect', { error: err.message });
-            if (this.autoReconnect && this.hasEverConnected) {
-                this._scheduleReconnect();
-            }
-        }
-    }
-
-    /**
-     * Планирование переподключения с обратным отсчетом
-     */
-    _scheduleReconnect() {
-        if (this.reconnectTimer) return;
-
-        this.isReconnecting = true;
-        this.reconnectAttempts++;
-
-        // Экспоненциальный backoff: 2s, 3s, 4.5s, 6.7s ... до макс. 12s
-        const delayMs = Math.min(
-            Math.floor(2000 * Math.pow(1.5, Math.min(this.reconnectAttempts - 1, 6))),
-            this.maxReconnectDelayMs
-        );
-        let remainingSeconds = Math.ceil(delayMs / 1000);
-
-        console.log(`[NetworkManager] Попытка переподключения #${this.reconnectAttempts} через ${remainingSeconds} сек...`);
-
-        this._emit('reconnecting', {
-            attempt: this.reconnectAttempts,
-            totalDelayMs: delayMs,
-            remainingSeconds: remainingSeconds
-        });
-
-        // Ежесекундный тик для UI-таймера обратного отсчета
-        this.countdownInterval = setInterval(() => {
-            remainingSeconds--;
-            if (remainingSeconds >= 0) {
-                this._emit('reconnect_tick', { remainingSeconds });
-            }
-        }, 1000);
-
-        this.reconnectTimer = setTimeout(() => {
-            this._clearReconnectTimers();
-            this.connectWebSocket();
-        }, delayMs);
-    }
-
-    /**
-     * Немедленное ручное переподключение по клику пользователя
-     */
-    reconnectNow() {
-        console.log('[NetworkManager] Принудительное ручное переподключение...');
-        this._clearReconnectTimers();
-        this.connectWebSocket();
-    }
-
-    _clearReconnectTimers() {
-        if (this.reconnectTimer) {
-            clearTimeout(this.reconnectTimer);
-            this.reconnectTimer = null;
-        }
-        if (this.countdownInterval) {
-            clearInterval(this.countdownInterval);
-            this.countdownInterval = null;
         }
     }
 
@@ -256,6 +152,9 @@ export class NetworkManager {
 
         if (this.socket && this.socket.readyState === WebSocket.OPEN) {
             this.socket.send(JSON.stringify(packet));
+        } else {
+            // Если сокет еще не подключен или оффлайн, эмулируем локальное логирование
+            // console.debug('[NetworkManager WS Offline] Packet queued/skipped:', type, packet);
         }
 
         return requestId;

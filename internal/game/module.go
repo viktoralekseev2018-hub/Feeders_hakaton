@@ -1,4 +1,4 @@
-// Package game wires protocol handlers to domain services and simulation loop.
+// Package game wires protocol handlers to domain services. It contains no simulation.
 package game
 
 import (
@@ -23,14 +23,9 @@ type Module struct {
 	ready   map[string]model.PlayerState
 }
 
-// New creates a game module. If worldService is nil, the server runs in scaffold mode.
+// A nil world is the explicit scaffold mode. Accounts and initial state still persist.
 func New(players storage.Players, worldService world.Service, log *slog.Logger) *Module {
-	return &Module{
-		players: players,
-		world:   worldService,
-		log:     log,
-		ready:   make(map[string]model.PlayerState),
-	}
+	return &Module{players: players, world: worldService, log: log, ready: make(map[string]model.PlayerState)}
 }
 
 func (m *Module) Register(h *realtime.Hub) {
@@ -49,31 +44,21 @@ func (m *Module) init(ctx context.Context, s realtime.Session, e protocol.Envelo
 		sendError(s, e, "invalid_payload", "Invalid player.init payload")
 		return
 	}
-
 	id := s.User().ID
 	m.mu.Lock()
 	state, exists := m.ready[id]
 	m.mu.Unlock()
-
 	if !exists {
 		var err error
 		state, err = m.players.LoadPlayer(ctx, id)
 		if errors.Is(err, storage.ErrNotFound) {
-			// Спавн в криокапсуле станции «Гелиос-7» (жилой отсек [-15.0, 1.7, 0.0])
-			state = model.PlayerState{
-				PlayerID:  id,
-				Position:  model.Position{X: -15.0, Y: 1.7, Z: 0.0},
-				Yaw:       0,
-				LastSeq:   0,
-				UpdatedAt: time.Now().UTC(),
-			}
+			state = model.PlayerState{PlayerID: id, Position: model.Position{Y: 1.7, Z: 5}, UpdatedAt: time.Now().UTC()}
 			err = m.players.SavePlayer(ctx, state)
 		}
 		if err != nil {
 			m.failure(s, e, err)
 			return
 		}
-
 		if m.world != nil {
 			state, err = m.world.Join(ctx, s.User(), state)
 			if err != nil {
@@ -81,82 +66,50 @@ func (m *Module) init(ctx context.Context, s realtime.Session, e protocol.Envelo
 				return
 			}
 		}
-
 		m.mu.Lock()
 		m.ready[id] = state
 		m.mu.Unlock()
 	}
-
-	s.Send("player.ready", e.RequestID, protocol.PlayerReady{
-		User:  s.User(),
-		State: state,
-		Capabilities: protocol.Capabilities{
-			Movement: m.world != nil,
-			World:    m.world != nil,
-			Agents:   true,
-		},
-	})
+	s.Send("player.ready", e.RequestID, protocol.PlayerReady{User: s.User(), State: state, Capabilities: protocol.Capabilities{Movement: m.world != nil, World: m.world != nil}})
 }
 
 func (m *Module) input(ctx context.Context, s realtime.Session, e protocol.Envelope) {
 	m.mu.Lock()
-	state, ready := m.ready[s.User().ID]
+	_, ready := m.ready[s.User().ID]
 	m.mu.Unlock()
-
 	if !ready {
 		sendError(s, e, "not_initialized", "Send player.init first")
 		return
 	}
-
 	input, err := protocol.DecodeInput(e.Payload)
 	if err != nil {
 		sendError(s, e, "invalid_payload", "Invalid player.input payload")
 		return
 	}
-
 	if m.world == nil {
 		sendError(s, e, "feature_disabled", "Movement module is not connected")
 		return
 	}
-
 	if err := m.world.Input(ctx, s.User().ID, input); err != nil {
 		sendError(s, e, "input_rejected", "Movement rejected")
 		return
 	}
-
-	// Обновляем текущее состояние игрока
-	state.Position = model.Position{X: input.X, Y: input.Y, Z: input.Z}
-	state.Yaw = input.Yaw
-	state.LastSeq = input.Seq
-	state.UpdatedAt = time.Now().UTC()
-
-	m.mu.Lock()
-	m.ready[s.User().ID] = state
-	m.mu.Unlock()
 }
 
 func (m *Module) leave(ctx context.Context, user model.User) {
 	m.mu.Lock()
-	state, exists := m.ready[user.ID]
+	_, exists := m.ready[user.ID]
 	delete(m.ready, user.ID)
 	m.mu.Unlock()
-
-	if exists {
-		if m.world != nil {
-			if err := m.world.Leave(ctx, user.ID); err != nil {
-				m.log.Error("world leave error", "player_id", user.ID, "error", err)
-			}
-		}
-		if err := m.players.SavePlayer(ctx, state); err != nil {
+	if exists && m.world != nil {
+		if err := m.world.Leave(ctx, user.ID); err != nil {
 			m.log.Error("save departing player", "player_id", user.ID, "error", err)
 		}
 	}
 }
-
 func sendError(s realtime.Session, e protocol.Envelope, code, message string) {
 	s.Send("error", e.RequestID, protocol.Error{Code: code, Message: message})
 }
-
 func (m *Module) failure(s realtime.Session, e protocol.Envelope, err error) {
 	m.log.Error("initialize player", "error", err)
 	sendError(s, e, "internal_error", "Cannot initialize player")
