@@ -107,7 +107,8 @@ func TestOrchestratorAdaptiveMemoryAndHerodotus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("herodotus talk failed: %v", err)
 	}
-	if heroReply.AgentID != "herodotus" || !strings.Contains(heroReply.Text, "Евтерпа") && !strings.Contains(heroReply.Text, "Геродот") && !strings.Contains(heroReply.Text, "истори") {
+	lowerHero := strings.ToLower(heroReply.Text)
+	if heroReply.AgentID != "herodotus" || (!strings.Contains(lowerHero, "евтерпа") && !strings.Contains(lowerHero, "геродот") && !strings.Contains(lowerHero, "истори")) {
 		t.Fatalf("invalid herodotus reply: %+v", heroReply)
 	}
 

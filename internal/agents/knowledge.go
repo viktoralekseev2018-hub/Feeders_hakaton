@@ -90,7 +90,7 @@ var StationKnowledgeBase = []KnowledgeArticle{
 	{
 		ID:       "astra-investigation-1",
 		AgentID:  "astra",
-		Keywords: []string{"хронология", "расследование", "удар", "метеорит", "архив", "память", "причина", "отключение"},
+		Keywords: []string{"хронология", "расследование", "удар", "метеорит", "архив", "память", "причина", "отключение", "авария"},
 		Title:    "Аналитический протокол расследования инцидента на борту «Горизонт-7»",
 		Section:  "Декодированный лог аварийной телеметрии (T - 04:12:00)",
 		Summary:  "Последовательность событий: 1. Кинетический удар микрометеорита в радиатор №2. 2. Металлический фрагмент попал в фильтр охлаждения. 3. Скачок температуры в активной зоне. 4. Защитная команда АСТРЫ по отключению освещения оранжереи.",
@@ -160,7 +160,7 @@ var StationKnowledgeBase = []KnowledgeArticle{
 func FindKnowledge(agentID, query string) (KnowledgeArticle, bool) {
 	q := strings.ToLower(query)
 	var bestArticle KnowledgeArticle
-	bestScore := 0
+	bestScore := -1
 
 	for _, art := range StationKnowledgeBase {
 		// Фильтр по роли агента
@@ -177,7 +177,7 @@ func FindKnowledge(agentID, query string) (KnowledgeArticle, bool) {
 
 		// Бонус за соответствие роли
 		if art.AgentID == agentID {
-			score += 2
+			score += 10
 		}
 
 		if score > bestScore {
