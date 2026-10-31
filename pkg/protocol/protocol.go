@@ -80,6 +80,45 @@ type PlayerReady struct {
 	Capabilities Capabilities      `json:"capabilities"`
 }
 
+// PlayerSnapshotItem represents one player's state in the 20Hz world snapshot.
+type PlayerSnapshotItem struct {
+	ID       string  `json:"id"`
+	Username string  `json:"name"`
+	X        float64 `json:"x"`
+	Y        float64 `json:"y"`
+	Z        float64 `json:"z"`
+	Yaw      float64 `json:"yaw"`
+}
+
+// WorldSnapshot is the 20Hz server broadcast of player positions.
+type WorldSnapshot struct {
+	ServerTime int64                `json:"server_time"`
+	Players    []PlayerSnapshotItem `json:"players"`
+}
+
+// Citation represents a verified source citation from the station knowledge base.
+type Citation struct {
+	SourceTitle string `json:"source_title"`
+	Section     string `json:"section"`
+	Excerpt     string `json:"excerpt"`
+	Confidence  string `json:"confidence"`
+}
+
+// AgentTalkRequest is sent by the client when communicating with a crew member.
+type AgentTalkRequest struct {
+	PlayerID string `json:"player_id,omitempty"`
+	AgentID  string `json:"agent_id"`
+	Text     string `json:"text"`
+}
+
+// AgentReply is sent by the server with the AI's response and source citations.
+type AgentReply struct {
+	AgentID   string    `json:"agent_id"`
+	AgentName string    `json:"agent_name"`
+	Text      string    `json:"text"`
+	Citation  *Citation `json:"citation,omitempty"`
+}
+
 func Message(kind, requestID string, payload any) (Envelope, error) {
 	b, err := json.Marshal(payload)
 	return Envelope{Version, kind, requestID, b}, err

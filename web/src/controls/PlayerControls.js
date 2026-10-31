@@ -178,4 +178,13 @@ export class PlayerControls {
     setPosition(x, y, z) {
         this.camera.position.set(x, (y || 0) + this.playerHeight, z);
     }
+
+    /**
+     * Установка угла обзора (yaw) в радианах
+     */
+    setYaw(yaw) {
+        if (typeof yaw === 'number' && !isNaN(yaw)) {
+            this.camera.rotation.y = yaw;
+        }
+    }
 }
