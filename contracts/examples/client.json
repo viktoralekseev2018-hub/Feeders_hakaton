@@ -1,0 +1,5 @@
+[
+  { "protocol_version": 1, "type": "player.init", "request_id": "req-1", "payload": { "client_time": 1793400000000, "username": "explorer" } },
+  { "protocol_version": 1, "type": "ping", "request_id": "req-2", "payload": { "timestamp": 1793400000000 } },
+  { "protocol_version": 1, "type": "player.input", "request_id": "req-3", "payload": { "seq": 1, "x": 0, "y": 1.7, "z": 5, "yaw": 0 } }
+]

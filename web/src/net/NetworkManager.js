@@ -11,6 +11,7 @@ export class NetworkManager {
         this.listeners = new Map();
         this.requestIdCounter = 1;
         this.pingInterval = null;
+        this.capabilities = null;
     }
 
     /**
@@ -55,24 +56,12 @@ export class NetworkManager {
 
             const data = await response.json().catch(() => ({}));
             if (!response.ok) {
-                // Если бэкенд на Этапе 1 еще не запущен (или это мок-режим), даем возможность локального тестирования
-                if (response.status === 404 || response.status === 502) {
-                    console.info('[NetworkManager] Сервер auth недоступен, включен оффлайн-режим.');
-                    this.currentUser = { username, id: 'local_' + Date.now() };
-                    return { success: true, offline: true, user: this.currentUser };
-                }
                 throw new Error(data.message || `Ошибка входа (${response.status})`);
             }
 
             this.currentUser = data.user || { username, id: data.user_id || 'usr_1' };
             return data;
         } catch (err) {
-            // Фолбэк для изолированной разработки фронтенда
-            if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
-                console.warn('[NetworkManager] LAN сервер пока не запущен. Запуск в режиме оффлайн-превью.');
-                this.currentUser = { username, id: 'local_' + Date.now() };
-                return { success: true, offline: true, user: this.currentUser };
-            }
             throw err;
         }
     }
@@ -112,6 +101,10 @@ export class NetworkManager {
             this.socket.onmessage = (event) => {
                 try {
                     const message = JSON.parse(event.data);
+                    if (message.type === 'player.ready') {
+                        this.currentUser = message.payload.user;
+                        this.capabilities = message.payload.capabilities;
+                    }
                     this._emit('message', message);
                     if (message.type) {
                         this._emit(message.type, message.payload, message);
@@ -123,6 +116,7 @@ export class NetworkManager {
 
             this.socket.onclose = (event) => {
                 this.isConnected = false;
+                this.capabilities = null;
                 this._stopHeartbeat();
                 console.warn(`[NetworkManager] WebSocket закрыт (код: ${event.code}, причина: ${event.reason || 'нет'})`);
                 this._emit('disconnect', { code: event.code, reason: event.reason });
@@ -146,6 +140,8 @@ export class NetworkManager {
      * @returns {string} request_id
      */
     send(type, payload = {}) {
+        // Scaffold advertises unavailable modules; do not flood it with 18 Hz errors.
+        if (type === 'player.input' && !this.capabilities?.movement) return null;
         const requestId = `req-${this.requestIdCounter++}`;
         const packet = {
             protocol_version: 1,

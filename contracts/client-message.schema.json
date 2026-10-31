@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Client requests, protocol v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_version", "type", "request_id", "payload"],
+  "properties": {
+    "protocol_version": { "const": 1 },
+    "type": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "request_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "payload": { "type": "object" }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "type": { "const": "player.init" },
+        "payload": {
+          "type": "object", "additionalProperties": false,
+          "properties": { "client_time": { "type": "integer" }, "username": { "type": "string" } }
+        }
+      }
+    },
+    {
+      "properties": {
+        "type": { "const": "player.input" },
+        "payload": {
+          "type": "object", "additionalProperties": false,
+          "required": ["seq", "x", "y", "z", "yaw"],
+          "properties": {
+            "seq": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+            "x": { "type": "number" }, "y": { "type": "number" },
+            "z": { "type": "number" }, "yaw": { "type": "number" }
+          }
+        }
+      }
+    },
+    { "properties": { "type": { "const": "ping" }, "payload": { "type": "object" } } }
+  ]
+}
