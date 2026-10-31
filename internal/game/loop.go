@@ -113,10 +113,6 @@ func (l *ServerLoop) Stop() {
 // tick собирает снимки всех активных игроков и рассылает world.snapshot.
 func (l *ServerLoop) tick() {
 	l.mu.RLock()
-	if len(l.players) == 0 {
-		l.mu.RUnlock()
-		return
-	}
 
 	snapshotItems := make([]protocol.PlayerSnapshotItem, 0, len(l.players))
 	for id, p := range l.players {
