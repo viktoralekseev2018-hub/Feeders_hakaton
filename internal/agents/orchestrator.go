@@ -11,7 +11,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -20,16 +19,19 @@ import (
 )
 
 type Orchestrator struct {
-	ollamaURL    string
-	modelName    string
-	httpClient   *http.Client
-	log          *slog.Logger
-	queueSem     chan struct{} // Семафор 1 активная генерация
-	historyMu    sync.RWMutex
+	ollamaURL     string
+	modelName     string
+	httpClient    *http.Client
+	log           *slog.Logger
+	queueSem      chan struct{} // Семафор 1 активная генерация
+	historyMu     sync.RWMutex
 	conversations map[string][]string // ключ: playerID + ":" + agentID -> последние 4 реплики
 }
 
 func NewOrchestrator(ollamaURL, modelName string, log *slog.Logger) *Orchestrator {
+	if log == nil {
+		log = slog.Default()
+	}
 	if ollamaURL == "" {
 		ollamaURL = os.Getenv("OLLAMA_URL")
 		if ollamaURL == "" {
@@ -64,10 +66,14 @@ func (o *Orchestrator) Talk(ctx context.Context, req Request) (Reply, error) {
 	// 1. Поиск релевантного источника из базы знаний станции (RAG)
 	article, _ := FindKnowledge(persona.ID, req.Text)
 
-	// 2. Получение истории прошлых реплик игрока с этим агентом
+	// 2. Получение истории прошлых реплик игрока с этим агентом (потокобезопасная копия)
 	convKey := req.PlayerID + ":" + persona.ID
 	o.historyMu.RLock()
-	priorHistory := o.conversations[convKey]
+	var priorHistory []string
+	if rawHistory, exists := o.conversations[convKey]; exists && len(rawHistory) > 0 {
+		priorHistory = make([]string, len(rawHistory))
+		copy(priorHistory, rawHistory)
+	}
 	o.historyMu.RUnlock()
 
 	// 3. Сборка системного промпта с цитатой первоисточника

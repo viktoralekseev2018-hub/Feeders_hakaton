@@ -61,7 +61,6 @@ func (pm *PersistenceManager) Start(ctx context.Context) {
 				pm.Flush(context.Background())
 				return
 			case <-pm.stopCh:
-				pm.Flush(context.Background())
 				return
 			case <-ticker.C:
 				pm.saveDirtyPlayers(ctx)
