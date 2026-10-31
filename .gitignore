@@ -13,3 +13,10 @@ dist/
 node_modules/
 temp/
 *.log
+
+# Host runtime state and local Go build cache
+/data/*
+!/data/.gitkeep
+/.cache/
+/bin/
+*.exe
