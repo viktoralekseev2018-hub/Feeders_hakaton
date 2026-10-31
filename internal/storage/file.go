@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -169,7 +170,6 @@ func (s *FileStore) GetPassport(ctx context.Context, userID string) (PassportRec
 	p := s.path("passports", userID)
 	err := readRecord(p, &passport)
 	if errors.Is(err, ErrNotFound) {
-		// Default initialized passport
 		return PassportRecord{
 			UserID:          userID,
 			MasteredTopics:  []string{"Введение в выживание на Гелиос-7"},
