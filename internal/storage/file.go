@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"feeders/internal/model"
 )
@@ -19,7 +20,7 @@ type FileStore struct {
 }
 
 func NewFileStore(dir string) (*FileStore, error) {
-	for _, name := range []string{"accounts", "players"} {
+	for _, name := range []string{"accounts", "players", "mistakes", "passports"} {
 		if err := os.MkdirAll(filepath.Join(dir, name), 0700); err != nil {
 			return nil, err
 		}
@@ -111,4 +112,73 @@ func (s *FileStore) SavePlayer(ctx context.Context, state model.PlayerState) err
 		return err
 	}
 	return writeRecord(s.path("players", state.PlayerID), state)
+}
+
+// Stage 6 LearningStore methods:
+
+func (s *FileStore) SaveMistake(ctx context.Context, mistake MistakeRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if mistake.Timestamp == 0 {
+		mistake.Timestamp = time.Now().UnixMilli()
+	}
+
+	p := s.path("mistakes", mistake.UserID)
+	var history []MistakeRecord
+	_ = readRecord(p, &history) // ignore not found
+	history = append(history, mistake)
+	return writeRecord(p, history)
+}
+
+func (s *FileStore) GetLearningHistory(ctx context.Context, userID string) ([]MistakeRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	p := s.path("mistakes", userID)
+	var history []MistakeRecord
+	err := readRecord(p, &history)
+	if errors.Is(err, ErrNotFound) {
+		return []MistakeRecord{}, nil
+	}
+	return history, err
+}
+
+func (s *FileStore) SavePassport(ctx context.Context, passport PassportRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	passport.UpdatedAt = time.Now().UnixMilli()
+	p := s.path("passports", passport.UserID)
+	return writeRecord(p, passport)
+}
+
+func (s *FileStore) GetPassport(ctx context.Context, userID string) (PassportRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var passport PassportRecord
+	if err := ctx.Err(); err != nil {
+		return passport, err
+	}
+	p := s.path("passports", userID)
+	err := readRecord(p, &passport)
+	if errors.Is(err, ErrNotFound) {
+		// Default initialized passport
+		return PassportRecord{
+			UserID:          userID,
+			MasteredTopics:  []string{"Введение в выживание на Гелиос-7"},
+			CompletedQuests: []string{},
+			ExperimentRuns:  0,
+			ClearanceLevel:  "Стажёр-исследователь",
+			Score:           0,
+			UpdatedAt:       time.Now().UnixMilli(),
+		}, nil
+	}
+	return passport, err
 }

@@ -1,4 +1,4 @@
-// Package game wires protocol handlers to domain services, simulation loop and AI agents.
+// Package game wires protocol handlers to domain services, simulation loop, physics and AI agents.
 package game
 
 import (
@@ -10,6 +10,7 @@ import (
 
 	"feeders/internal/agents"
 	"feeders/internal/model"
+	"feeders/internal/physics"
 	"feeders/internal/realtime"
 	"feeders/internal/storage"
 	"feeders/internal/world"
@@ -20,6 +21,7 @@ type Module struct {
 	players  storage.Players
 	world    world.Service
 	agents   agents.Service
+	physics  *physics.Engine
 	scenario *ScenarioEngine
 	hub      *realtime.Hub
 	log      *slog.Logger
@@ -27,16 +29,26 @@ type Module struct {
 	ready    map[string]model.PlayerState
 }
 
-// New creates a game module with authoritative world service and local AI agents service.
+// New creates a game module with authoritative world service, physics engine and local AI agents service.
 func New(players storage.Players, worldService world.Service, agentService agents.Service, log *slog.Logger) *Module {
-	return &Module{
+	mod := &Module{
 		players:  players,
 		world:    worldService,
 		agents:   agentService,
+		physics:  physics.NewEngine(),
 		scenario: NewScenarioEngine(),
 		log:      log,
 		ready:    make(map[string]model.PlayerState),
 	}
+
+	// Link learning store to orchestrator if available
+	if ls, ok := players.(storage.LearningStore); ok {
+		if orch, ok := agentService.(*agents.Orchestrator); ok {
+			orch.SetLearningStore(ls)
+		}
+	}
+
+	return mod
 }
 
 func (m *Module) Register(h *realtime.Hub) {
@@ -46,11 +58,22 @@ func (m *Module) Register(h *realtime.Hub) {
 	h.Handle("agent.talk", m.talk)
 	h.Handle("game.action", m.action)
 	h.Handle("investigation.solve", m.solve)
+
+	// Stage 5: Relativistic experiment handlers
+	h.Handle("experiment.get", m.experimentGet)
+	h.Handle("experiment.update", m.experimentUpdate)
+
+	// Stage 6: Learning passport & mistake logging
+	h.Handle("passport.get", m.passportGet)
+	h.Handle("learning.mistake.record", m.mistakeRecord)
+
+	// Stage 7: Historical quest verification
+	h.Handle("quest.herodotus.submit", m.herodotusQuestSubmit)
+
 	h.OnDisconnect(m.leave)
 }
 
 func (m *Module) init(ctx context.Context, s realtime.Session, e protocol.Envelope) {
-	// Legacy username is accepted for compatibility but identity comes from cookie.
 	var input struct {
 		ClientTime int64  `json:"client_time"`
 		Username   string `json:"username"`
@@ -69,7 +92,7 @@ func (m *Module) init(ctx context.Context, s realtime.Session, e protocol.Envelo
 		var err error
 		state, err = m.players.LoadPlayer(ctx, id)
 		if errors.Is(err, storage.ErrNotFound) {
-			// Спавн в криокапсуле станции «Горизонт-7» (жилой отсек [-15.0, 1.7, 0.0])
+			// Спавн в жилом отсеке станции «Горизонт-7» ([-15.0, 1.7, 0.0])
 			state = model.PlayerState{
 				PlayerID:  id,
 				Position:  model.Position{X: -15.0, Y: 1.7, Z: 0.0},
@@ -106,7 +129,6 @@ func (m *Module) init(ctx context.Context, s realtime.Session, e protocol.Envelo
 			Agents:   m.agents != nil,
 		},
 	})
-
 }
 
 func (m *Module) input(ctx context.Context, s realtime.Session, e protocol.Envelope) {
@@ -135,7 +157,6 @@ func (m *Module) input(ctx context.Context, s realtime.Session, e protocol.Envel
 		return
 	}
 
-	// Обновляем текущее состояние игрока
 	state.Position = model.Position{X: input.X, Y: input.Y, Z: input.Z}
 	state.Yaw = input.Yaw
 	state.LastSeq = input.Seq
@@ -233,6 +254,157 @@ func (m *Module) solve(ctx context.Context, s realtime.Session, e protocol.Envel
 	s.Send("investigation.result", e.RequestID, map[string]any{
 		"solved":  solved,
 		"message": msg,
+	})
+}
+
+// Stage 5: Relativistic experiment handlers
+func (m *Module) experimentGet(ctx context.Context, s realtime.Session, e protocol.Envelope) {
+	if m.physics == nil {
+		sendError(s, e, "physics_disabled", "Physics engine not initialized")
+		return
+	}
+	s.Send("experiment.state", e.RequestID, m.physics.GetState())
+}
+
+func (m *Module) experimentUpdate(ctx context.Context, s realtime.Session, e protocol.Envelope) {
+	var input protocol.ExperimentUpdateRequest
+	if err := protocol.DecodePayload(e.Payload, &input); err != nil {
+		sendError(s, e, "invalid_payload", "Invalid experiment.update payload")
+		return
+	}
+
+	if m.physics == nil {
+		sendError(s, e, "physics_disabled", "Physics engine not initialized")
+		return
+	}
+
+	updated, err := m.physics.UpdateExperiment(input.Velocity, input.Role, s.User().Username)
+	if err != nil {
+		sendError(s, e, "experiment_error", err.Error())
+		return
+	}
+
+	// Broadcast updated physics experiment state to all participants
+	if m.hub != nil {
+		m.hub.Broadcast("experiment.state", updated)
+	} else {
+		s.Send("experiment.state", e.RequestID, updated)
+	}
+}
+
+// Stage 6: Researcher Passport & Mistake Logging
+func (m *Module) passportGet(ctx context.Context, s realtime.Session, e protocol.Envelope) {
+	ls, ok := m.players.(storage.LearningStore)
+	if !ok {
+		s.Send("passport.state", e.RequestID, storage.PassportRecord{
+			UserID:          s.User().ID,
+			MasteredTopics:  []string{"Выживание на орбите Юпитера"},
+			CompletedQuests: []string{},
+			ClearanceLevel:  "Исследователь",
+		})
+		return
+	}
+
+	passport, err := ls.GetPassport(ctx, s.User().ID)
+	if err != nil {
+		sendError(s, e, "passport_error", "Failed to retrieve passport")
+		return
+	}
+	s.Send("passport.state", e.RequestID, passport)
+}
+
+func (m *Module) mistakeRecord(ctx context.Context, s realtime.Session, e protocol.Envelope) {
+	var input protocol.RecordMistakeRequest
+	if err := protocol.DecodePayload(e.Payload, &input); err != nil {
+		sendError(s, e, "invalid_payload", "Invalid learning.mistake.record payload")
+		return
+	}
+
+	ls, ok := m.players.(storage.LearningStore)
+	if !ok {
+		sendError(s, e, "storage_disabled", "Learning store not available")
+		return
+	}
+
+	err := ls.SaveMistake(ctx, storage.MistakeRecord{
+		UserID:   s.User().ID,
+		Topic:    input.Topic,
+		Forecast: input.Forecast,
+		Actual:   input.Actual,
+	})
+	if err != nil {
+		sendError(s, e, "storage_error", err.Error())
+		return
+	}
+
+	s.Send("learning.mistake.saved", e.RequestID, map[string]any{"status": "ok"})
+}
+
+// Stage 7: Historical Quest Validator (Separating citations from modern assumptions)
+func (m *Module) herodotusQuestSubmit(ctx context.Context, s realtime.Session, e protocol.Envelope) {
+	var input protocol.HistoryQuestSubmitRequest
+	if err := protocol.DecodePayload(e.Payload, &input); err != nil {
+		sendError(s, e, "invalid_payload", "Invalid quest.herodotus.submit payload")
+		return
+	}
+
+	// Canonical ground truth per Stage 7 specification:
+	// "quote" = authentic citation from Herodotus Book II (Euterpe)
+	// "assumption" = modern myth/speculation
+	groundTruth := map[string]string{
+		"pyramids_machines":    "quote",
+		"pyramids_powerplant":  "assumption",
+		"labyrinth_rooms":      "quote",
+		"alien_laser_cutting":  "assumption",
+		"nile_summer_flood":    "quote",
+		"underground_atlantis": "assumption",
+	}
+
+	score := 0
+	total := len(groundTruth)
+	feedback := make(map[string]bool)
+
+	for cardID, expected := range groundTruth {
+		given := input.Answers[cardID]
+		isCorrect := given == expected
+		feedback[cardID] = isCorrect
+		if isCorrect {
+			score++
+		}
+	}
+
+	passed := score >= 5
+
+	// Update passport if completed
+	if passed {
+		if ls, ok := m.players.(storage.LearningStore); ok {
+			pass, _ := ls.GetPassport(ctx, s.User().ID)
+			found := false
+			for _, q := range pass.CompletedQuests {
+				if q == "Геродот: Евтерпа" {
+					found = true
+					break
+				}
+			}
+			if !found {
+				pass.CompletedQuests = append(pass.CompletedQuests, "Геродот: Евтерпа")
+				pass.MasteredTopics = append(pass.MasteredTopics, "Античные первоисточники Египта")
+				pass.Score += 100
+				pass.ClearanceLevel = "Старший историк-архивист"
+				_ = ls.SavePassport(ctx, pass)
+			}
+		}
+	}
+
+	s.Send("quest.herodotus.result", e.RequestID, map[string]any{
+		"score":    score,
+		"total":    total,
+		"passed":   passed,
+		"feedback": feedback,
+		"message": map[bool]string{
+			true:  "Поздравляем! Вы безупречно отличили подлинные свидетельства Геродота от современных домыслов!",
+			false: "Некоторые карточки определены неверно. Помните: Геродот опирался на свидетельства жрецов и деревянные машины, а не на фантастические домыслы!",
+		}[passed],
 	})
 }
 

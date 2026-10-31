@@ -1,13 +1,18 @@
 /**
  * DebugAuditPanel.js
- * Панель аудита для жюри и отладки команды.
- * Визуализирует соблюдение правила ТЗ: «Клиент кэширует не более 10% общих данных мира».
+ * Панель аудита для жюри и отладки команды (Stage 8).
+ * Визуализирует соблюдение правила ТЗ: «Клиент кэширует не более 10% общих данных мира (C/W <= 10%)».
+ * Отображает:
+ * - Живой процент кэша (зеленый <= 8%, желтый <= 10%, красный > 10%)
+ * - FPS и Ping сети
+ * - Кнопку запуска 5-минутного демонстрационного сценария для жюри.
  */
 export class DebugAuditPanel {
     constructor(chunkManager) {
         this.chunkManager = chunkManager;
 
         this.fps = 60;
+        this.ping = 4; // ms in LAN
         this.frames = 0;
         this.lastTime = performance.now();
 
@@ -19,18 +24,18 @@ export class DebugAuditPanel {
         container.id = 'debug-audit-panel';
         container.innerHTML = `
             <div class="audit-header">
-                <span class="audit-title">АУДИТ КЭША МИРА (ТЗ &le; 10%)</span>
+                <span class="audit-title">АРБИТРАЖ ЖЮРИ (КЭШ C &le; 10% W)</span>
                 <span class="audit-badge" id="audit-badge">0.0%</span>
             </div>
 
             <div class="audit-meter-bar">
                 <div class="audit-meter-fill" id="audit-meter-fill" style="width: 0%;"></div>
-                <div class="audit-meter-threshold" title="Порог 10% ТЗ"></div>
+                <div class="audit-meter-threshold" title="Лимит 10% ТЗ"></div>
             </div>
 
             <div class="audit-stats-grid">
                 <div class="stat-item">
-                    <span class="stat-label">Мир W (несжатый):</span>
+                    <span class="stat-label">Мир W (канон):</span>
                     <span class="stat-val" id="audit-stat-w">125.8 МБ</span>
                 </div>
                 <div class="stat-item">
@@ -42,25 +47,27 @@ export class DebugAuditPanel {
                     <span class="stat-val" id="audit-stat-chunks">0 / 100</span>
                 </div>
                 <div class="stat-item">
-                    <span class="stat-label">Текущий чанк:</span>
+                    <span class="stat-label">Текущий отсек:</span>
                     <span class="stat-val" id="audit-stat-curchunk">[0, 0]</span>
                 </div>
                 <div class="stat-item">
-                    <span class="stat-label">Кадры в секунду:</span>
+                    <span class="stat-label">Кадры в сек (FPS):</span>
                     <span class="stat-val" id="audit-stat-fps">60 FPS</span>
                 </div>
                 <div class="stat-item">
-                    <span class="stat-label">Счетчик выгрузок:</span>
-                    <span class="stat-val" id="audit-stat-evictions" style="color: #58a6ff;">0</span>
+                    <span class="stat-label">LAN Ping:</span>
+                    <span class="stat-val" id="audit-stat-ping" style="color: #22c55e;">~4 мс</span>
                 </div>
             </div>
 
-            <div class="audit-controls">
-                <button class="audit-btn" id="audit-btn-test-eviction">Тест смены чанка (LRU)</button>
+            <div class="audit-controls" style="display: flex; gap: 8px; margin-top: 10px;">
+                <button class="audit-btn" id="audit-btn-test-eviction" style="flex: 1;">Вытеснение LRU</button>
+                <button class="audit-btn" id="audit-btn-demo" style="flex: 1.2; background: #0284c7; color: white;">▶ 5-мин Демо</button>
             </div>
         `;
 
-        document.getElementById('ui-container').appendChild(container);
+        const uiContainer = document.getElementById('ui-container') || document.body;
+        uiContainer.appendChild(container);
 
         this.badge = document.getElementById('audit-badge');
         this.meterFill = document.getElementById('audit-meter-fill');
@@ -69,25 +76,24 @@ export class DebugAuditPanel {
         this.statChunks = document.getElementById('audit-stat-chunks');
         this.statCurChunk = document.getElementById('audit-stat-curchunk');
         this.statFps = document.getElementById('audit-stat-fps');
+        this.statPing = document.getElementById('audit-stat-ping');
         this.statEvictions = document.getElementById('audit-stat-evictions');
         this.evictionCounter = 0;
 
-        // Кнопка для быстрой проверки жюри
-        document.getElementById('audit-btn-test-eviction').addEventListener('click', () => {
-            if (this.onTestEvictionRequested) {
-                this.onTestEvictionRequested();
-            }
+        document.getElementById('audit-btn-test-eviction')?.addEventListener('click', () => {
+            if (this.onTestEvictionRequested) this.onTestEvictionRequested();
+        });
+
+        document.getElementById('audit-btn-demo')?.addEventListener('click', () => {
+            if (this.onDemoRequested) this.onDemoRequested();
         });
     }
 
-    /**
-     * Покадровый подсчет FPS и обновление данных на панели
-     */
     update() {
         this.frames++;
         const now = performance.now();
 
-        if (now - this.lastTime >= 500) { // обновление дважды в секунду
+        if (now - this.lastTime >= 500) {
             this.fps = Math.round((this.frames * 1000) / (now - this.lastTime));
             this.frames = 0;
             this.lastTime = now;
@@ -96,32 +102,44 @@ export class DebugAuditPanel {
     }
 
     _refreshData() {
+        if (!this.chunkManager || !this.chunkManager.getMetrics) return;
+
         const m = this.chunkManager.getMetrics();
         const percent = m.percent;
 
         const wMB = (m.W / 1048576).toFixed(1);
         const cMB = (m.C / 1048576).toFixed(1);
 
-        this.badge.textContent = `${percent}%`;
-        this.meterFill.style.width = `${Math.min(percent * 10, 100)}%`; // 10% = 100% шкалы
+        if (this.badge) this.badge.textContent = `${percent}%`;
+        if (this.meterFill) this.meterFill.style.width = `${Math.min(percent * 10, 100)}%`;
 
-        // Цветовая маркировка по ТЗ
-        if (percent <= 8.0) {
-            this.badge.style.backgroundColor = '#238636'; // зеленый (в рамках рабочего бюджета)
-            this.meterFill.style.backgroundColor = '#2ea043';
-        } else if (percent <= 10.0) {
-            this.badge.style.backgroundColor = '#d29922'; // оранжевый (приближение к пределу)
-            this.meterFill.style.backgroundColor = '#e3b341';
-        } else {
-            this.badge.style.backgroundColor = '#da3633'; // красный (нарушение ТЗ)
-            this.meterFill.style.backgroundColor = '#f85149';
+        if (this.badge && this.meterFill) {
+            if (percent <= 8.0) {
+                this.badge.style.backgroundColor = '#16a34a';
+                this.meterFill.style.backgroundColor = '#22c55e';
+            } else if (percent <= 10.0) {
+                this.badge.style.backgroundColor = '#d97706';
+                this.meterFill.style.backgroundColor = '#f59e0b';
+            } else {
+                this.badge.style.backgroundColor = '#dc2626';
+                this.meterFill.style.backgroundColor = '#ef4444';
+            }
         }
 
-        this.statW.textContent = `${wMB} МБ`;
-        this.statC.textContent = `${cMB} МБ`;
-        this.statChunks.textContent = `${m.loadedChunksCount} / 100`;
-        this.statCurChunk.textContent = `[${m.currentChunkCoord.cx}, ${m.currentChunkCoord.cz}]`;
-        this.statFps.textContent = `${this.fps} FPS`;
+        if (this.statW) this.statW.textContent = `${wMB} МБ`;
+        if (this.statC) this.statC.textContent = `${cMB} МБ`;
+        if (this.statChunks) this.statChunks.textContent = `${m.loadedChunksCount} / 100`;
+        if (this.statCurChunk && m.currentChunkCoord) {
+            this.statCurChunk.textContent = `[${m.currentChunkCoord.cx}, ${m.currentChunkCoord.cz}]`;
+        }
+        if (this.statFps) this.statFps.textContent = `${this.fps} FPS`;
+    }
+
+    setPing(ms) {
+        this.ping = ms;
+        if (this.statPing) {
+            this.statPing.textContent = `${ms} мс`;
+        }
     }
 
     registerEviction() {

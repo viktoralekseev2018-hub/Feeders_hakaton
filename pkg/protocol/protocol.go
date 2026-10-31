@@ -129,6 +129,24 @@ type InvestigationSolveRequest struct {
 	Clues []string `json:"clues"`
 }
 
+// Stage 5: Relativistic light-clock experiment request.
+type ExperimentUpdateRequest struct {
+	Velocity float64 `json:"velocity"`
+	Role     string  `json:"role,omitempty"`
+}
+
+// Stage 6: Recording player learning predictions and mistakes.
+type RecordMistakeRequest struct {
+	Topic    string `json:"topic"`
+	Forecast string `json:"forecast"`
+	Actual   string `json:"actual"`
+}
+
+// Stage 7: Historical quest submission separating quotes from assumptions.
+type HistoryQuestSubmitRequest struct {
+	Answers map[string]string `json:"answers"` // card_id -> "quote" | "assumption"
+}
+
 func Message(kind, requestID string, payload any) (Envelope, error) {
 	b, err := json.Marshal(payload)
 	return Envelope{Version, kind, requestID, b}, err
