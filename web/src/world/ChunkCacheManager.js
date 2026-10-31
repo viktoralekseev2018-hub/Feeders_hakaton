@@ -185,7 +185,39 @@ export class ChunkCacheManager {
             }),
             neonCyan: new THREE.MeshBasicMaterial({ color: 0x00f5ff }),
             neonAmber: new THREE.MeshBasicMaterial({ color: 0xf59e0b }),
-            neonPurple: new THREE.MeshBasicMaterial({ color: 0xa855f7 })
+            neonPurple: new THREE.MeshBasicMaterial({ color: 0xa855f7 }),
+            kitchenTileFloor: new THREE.MeshStandardMaterial({
+                map: TextureGenerator.createKitchenTileTexture(),
+                roughness: 0.5,
+                metalness: 0.2
+            }),
+            hazardStripeFloor: new THREE.MeshBasicMaterial({
+                map: TextureGenerator.createHazardStripeTexture()
+            }),
+            signBridge: new THREE.MeshBasicMaterial({
+                map: TextureGenerator.createRoomSignTexture('01', 'КОМАНДНЫЙ МОСТИК', 'Command Bridge', '#00f5ff')
+            }),
+            signGalley: new THREE.MeshBasicMaterial({
+                map: TextureGenerator.createRoomSignTexture('02', 'КАМБУЗ И КУХНЯ', 'Crew Galley & Mess', '#f59e0b')
+            }),
+            signLounge: new THREE.MeshBasicMaterial({
+                map: TextureGenerator.createRoomSignTexture('03', 'КАЮТ-КОМПАНИЯ', 'Crew Lounge & Quarters', '#38bdf8')
+            }),
+            signLab: new THREE.MeshBasicMaterial({
+                map: TextureGenerator.createRoomSignTexture('04', 'ЛАБОРАТОРИЯ СТО', 'Relativity Physics Lab', '#a855f7')
+            }),
+            signHistory: new THREE.MeshBasicMaterial({
+                map: TextureGenerator.createRoomSignTexture('05', 'АРХИВ И ПАВИЛЬОН', 'Historical Archive', '#fbbf24')
+            }),
+            signReactor: new THREE.MeshBasicMaterial({
+                map: TextureGenerator.createRoomSignTexture('06', 'РЕАКТОРНЫЙ ОТСЕК', 'Tokamak Reactor Core', '#ef4444')
+            }),
+            signGreenhouse: new THREE.MeshBasicMaterial({
+                map: TextureGenerator.createRoomSignTexture('07', 'БИОСФЕРА / ОРАНЖЕРЕЯ', 'Hydroponic Greenhouse', '#10b981')
+            }),
+            signAirlock: new THREE.MeshBasicMaterial({
+                map: TextureGenerator.createRoomSignTexture('08', 'ШЛЮЗОВОЙ ОТСЕК', 'Airlock & EVA Dock', '#f97316')
+            })
         };
     }
 
@@ -352,9 +384,10 @@ export class ChunkCacheManager {
 
         const animators = [];
 
-        // 1. Пол отсека
+        // 1. Пол отсека (плитка для камбуза, темная палуба для остальных)
+        const floorMat = (cx === 0 && cz === -1) ? this.materials.kitchenTileFloor : this.materials.deckFloor;
         const floorGeo = new THREE.BoxGeometry(this.chunkSize, 0.4, this.chunkSize);
-        const floor = new THREE.Mesh(floorGeo, this.materials.deckFloor);
+        const floor = new THREE.Mesh(floorGeo, floorMat);
         floor.position.y = -0.2;
         floor.receiveShadow = true;
         group.add(floor);
@@ -365,30 +398,102 @@ export class ChunkCacheManager {
         ceiling.position.y = 5.0;
         group.add(ceiling);
 
-        // 3. Отсеки корабля «Горизонт-7»
+        // 3. Отсеки корабля «Горизонт-7» с отдельными несущими стенами и шлюзовыми порталами
         if (cx === 0 && cz === 0) {
             // [0, 0]: КОМАНДНЫЙ МОСТИК
+            this._buildRoomPerimeterWalls(group, {
+                signMat: this.materials.signBridge,
+                north: { hasWindow: true },
+                south: { door: true },
+                west:  { door: true },
+                east:  { door: true },
+                lightColor: 0x00f5ff,
+                lightIntensity: 1.2
+            });
             this._buildBridgeModule(group, animators);
         } else if (cx === 0 && cz === -1) {
             // [0, -1]: КАМБУЗ И КУХНЯ ЭКИПАЖА
+            this._buildRoomPerimeterWalls(group, {
+                signMat: this.materials.signGalley,
+                north: { door: true },
+                south: { door: false },
+                west:  { door: true },
+                east:  { door: true },
+                lightColor: 0xfef08a,
+                lightIntensity: 1.3
+            });
             this._buildGalleyKitchenModule(group, animators);
         } else if (cx === -1 && cz === 1) {
             // [-1, 1]: КОМНАТА ОТДЫХА И СПАЛЬНЫЕ КАЮТЫ
+            this._buildRoomPerimeterWalls(group, {
+                signMat: this.materials.signLounge,
+                north: { door: false },
+                south: { door: true },
+                west:  { door: false },
+                east:  { door: true },
+                lightColor: 0x38bdf8,
+                lightIntensity: 1.1
+            });
             this._buildCrewLoungeModule(group, animators);
         } else if (cx === -1 && cz === 0) {
             // [-1, 0]: ФИЗИЧЕСКАЯ ЛАБОРАТОРИЯ СТО
+            this._buildRoomPerimeterWalls(group, {
+                signMat: this.materials.signLab,
+                north: { door: true },
+                south: { door: true },
+                west:  { door: false },
+                east:  { door: true },
+                lightColor: 0xa855f7,
+                lightIntensity: 1.2
+            });
             this._buildPhysicsLabModule(group, animators);
         } else if (cx === 1 && cz === 1) {
             // [1, 1]: АРХИВ И ПАВИЛЬОН ГЕРОДОТА
+            this._buildRoomPerimeterWalls(group, {
+                signMat: this.materials.signHistory,
+                north: { door: false },
+                south: { door: true },
+                west:  { door: true },
+                east:  { door: false },
+                lightColor: 0xfef3c7,
+                lightIntensity: 1.2
+            });
             this._buildHistoryArchiveModule(group, animators);
         } else if (cx === 1 && cz === 0) {
             // [1, 0]: РЕАКТОРНЫЙ ОТСЕК
+            this._buildRoomPerimeterWalls(group, {
+                signMat: this.materials.signReactor,
+                north: { door: true },
+                south: { door: true },
+                west:  { door: true },
+                east:  { door: false },
+                lightColor: 0xff5500,
+                lightIntensity: 1.6
+            });
             this._buildReactorModule(group, animators);
         } else if (cx === 0 && cz === 1) {
             // [0, 1]: ГИДРОПОННАЯ ОРАНЖЕРЕЯ
+            this._buildRoomPerimeterWalls(group, {
+                signMat: this.materials.signGreenhouse,
+                north: { door: false },
+                south: { door: true },
+                west:  { door: true },
+                east:  { door: true },
+                lightColor: 0x8b5cf6,
+                lightIntensity: 1.5
+            });
             this._buildGreenhouseModule(group, animators);
         } else if (cx === 1 && cz === -1) {
             // [1, -1]: ШЛЮЗОВОЙ ОТСЕК
+            this._buildRoomPerimeterWalls(group, {
+                signMat: this.materials.signAirlock,
+                north: { door: true },
+                south: { door: false },
+                west:  { door: true },
+                east:  { door: false },
+                lightColor: 0xf59e0b,
+                lightIntensity: 1.3
+            });
             this._buildAirlockModule(group, animators);
         } else {
             // ТЕХНИЧЕСКИЕ КОРИДОРЫ
@@ -396,6 +501,164 @@ export class ChunkCacheManager {
         }
 
         return { group, animators };
+    }
+
+    /**
+     * Полноценные несущие стены и герметичные переборки отсека с арочными дверными порталами,
+     * навигационными вывесками с подсветкой, предупреждающей разметкой и потолочным освещением.
+     */
+    _buildRoomPerimeterWalls(group, roomMeta) {
+        const wallMat = this.materials.bulkheadWall;
+        const archMat = this.materials.hullDark;
+        const steelMat = this.materials.brushedSteel;
+        const signMat = roomMeta.signMat;
+
+        // Потолочные светодиодные светильники
+        const ceilLight1 = new THREE.Mesh(new THREE.BoxGeometry(6.0, 0.08, 0.4), this.materials.energyConduit);
+        ceilLight1.position.set(0, 4.95, -3.0);
+        group.add(ceilLight1);
+
+        const ceilLight2 = new THREE.Mesh(new THREE.BoxGeometry(6.0, 0.08, 0.4), this.materials.energyConduit);
+        ceilLight2.position.set(0, 4.95, 3.0);
+        group.add(ceilLight2);
+
+        // Атмосферный точечный свет для данного отсека
+        if (roomMeta.lightColor) {
+            const roomPointLight = new THREE.PointLight(
+                roomMeta.lightColor,
+                roomMeta.lightIntensity || 1.2,
+                24.0
+            );
+            roomPointLight.position.set(0, 4.2, 0);
+            group.add(roomPointLight);
+        }
+
+        // Функция возведения стены для одной стороны
+        const createWallSide = (hasDoor, isZAxis, offset) => {
+            if (hasDoor) {
+                // Стена с дверным порталом: 2 боковые секции (по 8м), перемычка сверху (от 3.6 до 5.0), арочные пилоны, знак и разметка
+                const sideW = 8.0;
+                const sideH = 5.0;
+                const thick = 0.35;
+
+                // Левая секция
+                const leftGeo = isZAxis ? new THREE.BoxGeometry(sideW, sideH, thick) : new THREE.BoxGeometry(thick, sideH, sideW);
+                const leftMesh = new THREE.Mesh(leftGeo, wallMat);
+                if (isZAxis) {
+                    leftMesh.position.set(-6.0, 2.5, offset);
+                } else {
+                    leftMesh.position.set(offset, 2.5, -6.0);
+                }
+                group.add(leftMesh);
+
+                // Правая секция
+                const rightGeo = isZAxis ? new THREE.BoxGeometry(sideW, sideH, thick) : new THREE.BoxGeometry(thick, sideH, sideW);
+                const rightMesh = new THREE.Mesh(rightGeo, wallMat);
+                if (isZAxis) {
+                    rightMesh.position.set(6.0, 2.5, offset);
+                } else {
+                    rightMesh.position.set(offset, 2.5, 6.0);
+                }
+                group.add(rightMesh);
+
+                // Верхняя перемычка (линтель) над дверным проемом
+                const lintelW = 4.0;
+                const lintelH = 1.4;
+                const lintelGeo = isZAxis ? new THREE.BoxGeometry(lintelW, lintelH, thick) : new THREE.BoxGeometry(thick, lintelH, lintelW);
+                const lintelMesh = new THREE.Mesh(lintelGeo, wallMat);
+                if (isZAxis) {
+                    lintelMesh.position.set(0, 4.3, offset);
+                } else {
+                    lintelMesh.position.set(offset, 4.3, 0);
+                }
+                group.add(lintelMesh);
+
+                // Арочные пилоны слева и справа от проема
+                for (const pos of [-2.05, 2.05]) {
+                    const postGeo = isZAxis ? new THREE.BoxGeometry(0.35, 3.6, 0.45) : new THREE.BoxGeometry(0.45, 3.6, 0.35);
+                    const postMesh = new THREE.Mesh(postGeo, steelMat);
+                    if (isZAxis) {
+                        postMesh.position.set(pos, 1.8, offset);
+                    } else {
+                        postMesh.position.set(offset, 1.8, pos);
+                    }
+                    group.add(postMesh);
+                }
+
+                // Голографическая световая вывеска над дверным порталом
+                if (signMat) {
+                    const signGeo = isZAxis ? new THREE.BoxGeometry(2.2, 0.55, 0.04) : new THREE.BoxGeometry(0.04, 0.55, 2.2);
+                    const signMesh = new THREE.Mesh(signGeo, signMat);
+                    if (isZAxis) {
+                        signMesh.position.set(0, 4.15, offset + (offset < 0 ? 0.2 : -0.2));
+                    } else {
+                        signMesh.position.set(offset + (offset < 0 ? 0.2 : -0.2), 4.15, 0);
+                    }
+                    group.add(signMesh);
+                }
+
+                // Предупреждающая желто-черная полоса на пороге двери
+                const threshGeo = isZAxis ? new THREE.BoxGeometry(4.0, 0.02, 0.8) : new THREE.BoxGeometry(0.8, 0.02, 4.0);
+                const threshMesh = new THREE.Mesh(threshGeo, this.materials.hazardStripeFloor);
+                if (isZAxis) {
+                    threshMesh.position.set(0, 0.01, offset);
+                } else {
+                    threshMesh.position.set(offset, 0.01, 0);
+                }
+                group.add(threshMesh);
+            } else {
+                // Глухая бронированная внешняя переборка (Solid Outer Bulkhead)
+                const wallW = 20.0;
+                const wallH = 5.0;
+                const thick = 0.45;
+                const solidGeo = isZAxis ? new THREE.BoxGeometry(wallW, wallH, thick) : new THREE.BoxGeometry(thick, wallH, wallW);
+                const solidMesh = new THREE.Mesh(solidGeo, wallMat);
+                if (isZAxis) {
+                    solidMesh.position.set(0, 2.5, offset);
+                } else {
+                    solidMesh.position.set(offset, 2.5, 0);
+                }
+                group.add(solidMesh);
+
+                // Ребра жесткости вдоль стены
+                for (let pos = -7.5; pos <= 7.5; pos += 5.0) {
+                    const ribGeo = isZAxis ? new THREE.BoxGeometry(0.4, 5.0, 0.3) : new THREE.BoxGeometry(0.3, 5.0, 0.4);
+                    const ribMesh = new THREE.Mesh(ribGeo, archMat);
+                    if (isZAxis) {
+                        ribMesh.position.set(pos, 2.5, offset + (offset < 0 ? 0.25 : -0.25));
+                    } else {
+                        ribMesh.position.set(offset + (offset < 0 ? 0.25 : -0.25), 2.5, pos);
+                    }
+                    group.add(ribMesh);
+                }
+
+                // Энергошина вдоль глухой стены
+                const conduitGeo = new THREE.CylinderGeometry(0.08, 0.08, 19.0, 8);
+                const conduitMesh = new THREE.Mesh(conduitGeo, this.materials.energyConduit);
+                if (isZAxis) {
+                    conduitMesh.rotation.z = Math.PI / 2;
+                    conduitMesh.position.set(0, 1.2, offset + (offset < 0 ? 0.28 : -0.28));
+                } else {
+                    conduitMesh.rotation.x = Math.PI / 2;
+                    conduitMesh.position.set(offset + (offset < 0 ? 0.28 : -0.28), 1.2, 0);
+                }
+                group.add(conduitMesh);
+            }
+        };
+
+        // North: z = -10
+        if (!roomMeta.north?.hasWindow) {
+            createWallSide(roomMeta.north?.door, true, -10.0);
+        }
+
+        // South: z = +10
+        createWallSide(roomMeta.south?.door, true, 10.0);
+
+        // West: x = -10
+        createWallSide(roomMeta.west?.door, false, -10.0);
+
+        // East: x = +10
+        createWallSide(roomMeta.east?.door, false, 10.0);
     }
 
     /**

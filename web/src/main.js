@@ -407,7 +407,11 @@ class LastCrewApp {
 
         if (intersects.length > 0) {
             const hit = intersects[0].object;
-            this.activeHoverObject = hit;
+            if (this.activeHoverObject !== hit) {
+                this._clearHoverHighlight();
+                this.activeHoverObject = hit;
+                this._applyHoverHighlight(hit);
+            }
 
             // Если рядом нет говорящего NPC, показываем подсказку предмета
             if (!this.activeInteractionTarget && this.interactionPill && this.interactionLabel) {
@@ -415,11 +419,34 @@ class LastCrewApp {
                 this.interactionPill.classList.remove('hidden');
             }
         } else {
+            this._clearHoverHighlight();
             this.activeHoverObject = null;
             if (!this.activeInteractionTarget && this.interactionPill) {
                 this.interactionPill.classList.add('hidden');
             }
         }
+    }
+
+    _applyHoverHighlight(mesh) {
+        if (!mesh || !mesh.material) return;
+        this._highlightedMesh = mesh;
+        if (mesh.material.emissive) {
+            this._originalEmissive = mesh.material.emissive.clone();
+            this._originalEmissiveIntensity = mesh.material.emissiveIntensity;
+            mesh.material.emissive.set(0x38bdf8);
+            mesh.material.emissiveIntensity = 0.9;
+        }
+    }
+
+    _clearHoverHighlight() {
+        if (this._highlightedMesh && this._highlightedMesh.material) {
+            if (this._originalEmissive && this._highlightedMesh.material.emissive) {
+                this._highlightedMesh.material.emissive.copy(this._originalEmissive);
+                this._highlightedMesh.material.emissiveIntensity = this._originalEmissiveIntensity ?? 0;
+            }
+        }
+        this._highlightedMesh = null;
+        this._originalEmissive = null;
     }
 
     _handleObjectInteraction(obj) {

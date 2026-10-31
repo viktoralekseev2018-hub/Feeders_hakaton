@@ -299,4 +299,122 @@ export class TextureGenerator {
         const tex = new THREE.CanvasTexture(canvas);
         return tex;
     }
+
+    /**
+     * Светящаяся голографическая табличка-указатель над шлюзовыми дверями отсеков
+     */
+    static createRoomSignTexture(number, titleRu, titleEn, accentHex = '#00f5ff') {
+        const width = 512;
+        const height = 128;
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+
+        // Темный фон панели
+        ctx.fillStyle = '#090d16';
+        ctx.fillRect(0, 0, width, height);
+
+        // Светящаяся рамка с акцентным цветом
+        ctx.strokeStyle = accentHex;
+        ctx.lineWidth = 4;
+        ctx.strokeRect(6, 6, width - 12, height - 12);
+
+        // Внутренняя тонкая окантовка
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(12, 12, width - 24, height - 24);
+
+        // Номер отсека слева в светящемся квадрате
+        ctx.fillStyle = accentHex;
+        ctx.fillRect(20, 20, 88, 88);
+
+        ctx.fillStyle = '#090d16';
+        ctx.font = '900 48px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(number, 64, 64);
+
+        // Основное название отсека (RU)
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = 'bold 26px "Inter", sans-serif';
+        ctx.fillText(titleRu, 128, 48);
+
+        // Английский подзаголовок (EN)
+        ctx.fillStyle = accentHex;
+        ctx.font = '600 16px monospace';
+        ctx.fillText(titleEn.toUpperCase(), 128, 82);
+
+        // Индикатор онлайн-статуса отсека
+        ctx.fillStyle = '#10b981';
+        ctx.beginPath();
+        ctx.arc(width - 32, 32, 6, 0, Math.PI * 2);
+        ctx.fill();
+
+        const tex = new THREE.CanvasTexture(canvas);
+        return tex;
+    }
+
+    /**
+     * Желто-черная диагональная полоса безопасности (Hazard Stripe)
+     */
+    static createHazardStripeTexture() {
+        const width = 256;
+        const height = 64;
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+
+        ctx.fillStyle = '#f59e0b'; // Ярко-желтый
+        ctx.fillRect(0, 0, width, height);
+
+        ctx.fillStyle = '#111827'; // Черный
+        const stripeW = 32;
+        for (let x = -height; x < width + height; x += stripeW * 2) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x + stripeW, 0);
+            ctx.lineTo(x + stripeW - height, height);
+            ctx.lineTo(x - height, height);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(4, 1);
+        return tex;
+    }
+
+    /**
+     * Светлая плитка для камбуза и санотсеков
+     */
+    static createKitchenTileTexture() {
+        const size = 256;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(0, 0, size, size);
+
+        // Швы между плитками
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = 4;
+        const step = 64;
+        for (let x = 0; x <= size; x += step) {
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, size); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, x); ctx.lineTo(size, x); ctx.stroke();
+        }
+
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(4, 4);
+        return tex;
+    }
 }

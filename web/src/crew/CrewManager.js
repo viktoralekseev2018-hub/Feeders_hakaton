@@ -97,6 +97,45 @@ export class CrewManager {
                     { id: 'astra_investigation', label: 'Причина аварии', text: 'До восстановления архива я не могу установить первопричину. Требуются данные внешнего датчика и фильтра.' },
                     { id: 'astra_advice', label: 'Рекомендация по шагам', text: 'Предлагаю сначала запустить реактор и восстановить охлаждение, затем запустить оранжерею и восстановить архив.' }
                 ]
+            },
+            herodotus: {
+                id: 'herodotus',
+                name: 'Геродот Галикарнасский',
+                role: 'Отец истории, античный летописец',
+                locationName: 'Павильон Истории (Архив)',
+                themeColor: '#fbbf24',
+                threeColor: 0xfbbf24,
+                secondaryColor: 0x451a03,
+                position: new THREE.Vector3(20, 0, 23.5),
+                rotationY: Math.PI,
+                personality: 'Мудрый античный рассказчик. Опирается на свидетельства очевидцев из второй книги «Истории» («Евтерпа») и учит отделять факты от домыслов.',
+                avatarSvg: 'herodotus',
+                initialGreeting: 'Приветствую тебя, любознательный путник! Я — Геродот. В моем труде о Египте я записал то, что видел сам, и то, что слышал от жрецов. Готов ли ты отделить истину от домыслов?',
+                knowledgeTopics: [
+                    { id: 'hero_method', label: 'Метод исследования', text: 'Я разделяю то, что зрел очами своими, от того, что передано по слуху от египетских жрецов!' },
+                    { id: 'hero_pyramids', label: 'Постройка пирамид', text: 'Пирамиду строили уступами, поднимая каменные блоки машинами из коротких деревянных брусьев с яруса на ярус.' },
+                    { id: 'hero_nile', label: 'Разлив Нила', text: 'Нил разливается в течение 100 дней от летнего солнцестояния, когда другие реки пересыхают.' },
+                    { id: 'hero_labyrinth', label: 'Лабиринт 12 царей', text: 'Лабиринт близ озера Мерида превосходит пирамиды: в нем 12 крытых дворов и 3000 покоев.' }
+                ]
+            },
+            einstein: {
+                id: 'einstein',
+                name: 'Альберт Эйнштейн',
+                role: 'Физик-теоретик, автор СТО',
+                locationName: 'Физическая лаборатория СТО',
+                themeColor: '#a855f7',
+                threeColor: 0xa855f7,
+                secondaryColor: 0x2e1065,
+                position: new THREE.Vector3(-17.0, 0, 2.5),
+                rotationY: -Math.PI / 2,
+                personality: 'Доброжелательный гений. Объясняет релятивистские эффекты, инвариантность скорости света и работу световых часов.',
+                avatarSvg: 'einstein',
+                initialGreeting: 'Приветствую, коллега! Скорость света c инвариантна во всех системах отсчета. Из-за этого время в движущемся поезде течет медленнее!',
+                knowledgeTopics: [
+                    { id: 'einstein_c', label: 'Инвариантность c', text: 'Скорость света c = 299 792 км/с одинакова для любого наблюдателя, независимо от его движения.' },
+                    { id: 'einstein_clock', label: 'Световые часы', text: 'Фотон между зеркалами движущегося вагона чертит диагональ. Путь длиннее, а c постоянна — значит, время замедляется.' },
+                    { id: 'einstein_gamma', label: 'Фактор Лоренца', text: 'При скорости 0.6c время замедляется в 1.25 раза, а при 0.8c — в 1.6667 раза!' }
+                ]
             }
         };
     }
@@ -400,6 +439,47 @@ export class CrewManager {
             const epR = new THREE.Mesh(epauletGeo, accentMat);
             epR.position.set(0.36, 1.5, 0);
             charGroup.add(epR);
+        } else if (profile.id === 'herodotus') {
+            // Античная тога, золотой лавровый венок и свиток папируса
+            const togaMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.9 });
+            const togaGeo = new THREE.CylinderGeometry(0.36, 0.44, 1.25, 16);
+            const toga = new THREE.Mesh(togaGeo, togaMat);
+            toga.position.y = 0.95;
+            charGroup.add(toga);
+
+            const wreathGeo = new THREE.TorusGeometry(0.24, 0.03, 8, 24);
+            const wreathMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, metalness: 0.8, roughness: 0.2 });
+            const wreath = new THREE.Mesh(wreathGeo, wreathMat);
+            wreath.position.set(0, 1.82, 0);
+            wreath.rotation.x = Math.PI / 2;
+            charGroup.add(wreath);
+
+            const scrollGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.35, 12);
+            const scrollMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.7 });
+            const scroll = new THREE.Mesh(scrollGeo, scrollMat);
+            scroll.position.set(0.38, 1.0, 0.2);
+            scroll.rotation.x = Math.PI / 4;
+            charGroup.add(scroll);
+        } else if (profile.id === 'einstein') {
+            // Теплый свитер, пышные белые волосы и фотонный излучатель
+            const sweaterMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.9 });
+            const sweaterGeo = new THREE.BoxGeometry(0.66, 0.76, 0.44);
+            const sweater = new THREE.Mesh(sweaterGeo, sweaterMat);
+            sweater.position.y = 1.15;
+            charGroup.add(sweater);
+
+            const hairGeo = new THREE.SphereGeometry(0.28, 12, 12);
+            const hairMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.95 });
+            const hair = new THREE.Mesh(hairGeo, hairMat);
+            hair.position.set(0, 1.8, -0.05);
+            charGroup.add(hair);
+
+            const emitterGeo = new THREE.CylinderGeometry(0.03, 0.05, 0.26, 10);
+            const emitterMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 1.2 });
+            const emitter = new THREE.Mesh(emitterGeo, emitterMat);
+            emitter.position.set(0.38, 1.0, 0.2);
+            emitter.rotation.x = -Math.PI / 6;
+            charGroup.add(emitter);
         }
 
         return charGroup;
