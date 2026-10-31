@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ХроноГрад VR — Интерактивный мир истории и науки</title>
+    <link rel="stylesheet" href="./css/style.css">
+    
+    <!-- Нативный браузерный Import Map для Three.js без внешних сборщиков -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "./vendor/three.module.js",
+            "three/addons/": "./vendor/"
+        }
+    }
+    </script>
+</head>
+<body>
+    <!-- Холст Three.js WebGL -->
+    <canvas id="webgl-canvas"></canvas>
+
+    <!-- Прицел от первого лица -->
+    <div id="crosshair"></div>
+
+    <!-- UI контейнер поверх 3D -->
+    <div id="ui-container">
+        
+        <!-- HUD Панель -->
+        <div id="hud-overlay">
+            <div class="hud-pill" id="lan-status-pill">
+                <span class="status-dot" id="lan-status-dot"></span>
+                <span id="lan-status-text">LAN: Оффлайн</span>
+            </div>
+            <div class="hud-pill" id="player-info-pill" style="display: none;">
+                <span>Игрок: <b id="hud-username">Гость</b></span>
+            </div>
+            <div class="hud-pill" id="pos-info-pill" style="display: none;">
+                <span id="hud-coords">X: 0.0 | Y: 1.7 | Z: 0.0</span>
+            </div>
+        </div>
+
+        <!-- Подсказка по управлению -->
+        <div id="controls-hint" style="display: none;">
+            <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Перемещение | <kbd>Мышь</kbd> Обзор | <kbd>Shift</kbd> Бег | Клик для захвата
+        </div>
+
+        <!-- Экран входа / Авторизации -->
+        <div class="modal-overlay" id="auth-modal">
+            <div class="auth-card">
+                <span class="brand-badge">Образовательный мир</span>
+                <h1 class="auth-title">ХроноГрад VR</h1>
+                <p class="auth-subtitle">Исследуй, общайся, делай открытия вместе</p>
+
+                <div class="tab-switcher">
+                    <button class="tab-btn active" id="tab-login-btn">Вход</button>
+                    <button class="tab-btn" id="tab-register-btn">Регистрация</button>
+                </div>
+
+                <form class="auth-form" id="auth-form" onsubmit="return false;">
+                    <div class="input-group">
+                        <label for="auth-username">Имя пользователя (Никнейм)</label>
+                        <input type="text" id="auth-username" placeholder="Например: Explorer" required autocomplete="username">
+                    </div>
+                    
+                    <div class="input-group">
+                        <label for="auth-password">Пароль</label>
+                        <input type="password" id="auth-password" placeholder="••••••••" required autocomplete="current-password">
+                    </div>
+
+                    <button type="submit" class="submit-btn" id="auth-submit-btn">Войти в мир</button>
+                    
+                    <div class="auth-feedback" id="auth-feedback"></div>
+                </form>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Главная точка входа клиентского приложения -->
+    <script type="module" src="./src/main.js"></script>
+</body>
+</html>
