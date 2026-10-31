@@ -80,6 +80,22 @@ type PlayerReady struct {
 	Capabilities Capabilities      `json:"capabilities"`
 }
 
+// PlayerSnapshotItem represents one player's state in the 20Hz world snapshot.
+type PlayerSnapshotItem struct {
+	ID       string  `json:"id"`
+	Username string  `json:"name"`
+	X        float64 `json:"x"`
+	Y        float64 `json:"y"`
+	Z        float64 `json:"z"`
+	Yaw      float64 `json:"yaw"`
+}
+
+// WorldSnapshot is the 20Hz server broadcast of player positions.
+type WorldSnapshot struct {
+	ServerTime int64                `json:"server_time"`
+	Players    []PlayerSnapshotItem `json:"players"`
+}
+
 func Message(kind, requestID string, payload any) (Envelope, error) {
 	b, err := json.Marshal(payload)
 	return Envelope{Version, kind, requestID, b}, err
