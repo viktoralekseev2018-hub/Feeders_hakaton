@@ -36,7 +36,7 @@ func TestCrashResilienceSimulatedWAL(t *testing.T) {
 				st := model.PlayerState{
 					PlayerID:  uID,
 					Position:  model.Position{X: float64(workerID * 10), Y: 1.7, Z: float64(i)},
-					Yaw:       float32(i),
+					Yaw:       float64(i),
 					UpdatedAt: time.Now().UTC(),
 				}
 				_ = store.SavePlayer(ctx, st)
