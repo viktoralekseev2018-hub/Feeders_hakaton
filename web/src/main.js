@@ -7,6 +7,7 @@ import { RemotePlayerManager } from './render/RemotePlayerManager.js';
 import { DebugAuditPanel } from './ui/DebugAuditPanel.js';
 import { CrewManager } from './crew/CrewManager.js';
 import { DialogueModal } from './ui/DialogueModal.js';
+import { SurvivalConsole } from './ui/SurvivalConsole.js';
 
 /**
  * main.js
@@ -14,15 +15,15 @@ import { DialogueModal } from './ui/DialogueModal.js';
  * 
  * Предметная область: энергия, экология замкнутых систем и основы космонавтики.
  * 
- * Реализовано в этапе 3:
- * 1. Полный Sci-Fi ретеминг космической станции «Гелиос-7».
- * 2. Три уникальных ИИ-члена экипажа (Инженер Марк Вэнс, Биолог Елена Ростова, Капитан Александр Волк)
- *    с процедурными 3D-моделями скафандров, уникальным характером и позицией в энергетической дилемме.
+ * Реализовано в этапе 3 и 4:
+ * 1. Полный Sci-Fi ретеминг космического корабля «Горизонт-7» у Юпитера.
+ * 2. Четыре уникальных ИИ-персонажа (Инженер Марк Вэнс, Биолог Елена Ростова, Капитан Александр Волк, Бортовой ИИ АСТРА).
  * 3. Спавн игрока в криокапсуле с плавным визуальным пробуждением и применением координат от сервера.
  * 4. Баннер аварийного обрыва связи с авто-переподключением (Exponential Backoff + таймер обратного отсчета).
  * 5. Интерактивная 3D proximity-система диалогов по клавише [E].
- * 6. HUD телеметрии систем жизнеобеспечения (O2, Энергия, Корпус).
- * 7. Сохранение строгого LRU-кэша C <= 10% W с утилизацией через .dispose().
+ * 6. Интерактивный пульт операций выживания [C] и детективный терминал расследования аварии [I].
+ * 7. HUD телеметрии систем жизнеобеспечения (O2, Энергия, Корпус) и синхронизация 8-циклового протокола.
+ * 8. Сохранение строгого LRU-кэша C <= 10% W с утилизацией через .dispose().
  */
 class LastCrewApp {
     constructor() {
@@ -155,17 +156,38 @@ class LastCrewApp {
         this.controls = new PlayerControls(this.camera, document.body);
 
         this.canvas.addEventListener('click', () => {
-            if (this.isAuthenticated && !this.dialogueModal?.isOpen) {
+            if (this.isAuthenticated && !this.dialogueModal?.isOpen && !this.survivalConsole?.isActionModalOpen && !this.survivalConsole?.isInvestigationModalOpen) {
                 this.controls.lock();
             }
         });
 
-        // Клавиша взаимодействия E
+        // Клавиши взаимодействия E (Диалог), C (Пульт операций), I (Улики расследования)
         window.addEventListener('keydown', (e) => {
-            if (e.code === 'KeyE' && this.isAuthenticated) {
+            if (!this.isAuthenticated) return;
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+            if (e.code === 'KeyE') {
                 if (this.activeInteractionTarget && !this.dialogueModal.isOpen) {
                     this.controls.unlock();
                     this.dialogueModal.open(this.activeInteractionTarget);
+                }
+            } else if (e.code === 'KeyC') {
+                if (this.survivalConsole && !this.dialogueModal?.isOpen) {
+                    this.controls.unlock();
+                    if (this.survivalConsole.isActionModalOpen) {
+                        this.survivalConsole.closeModals();
+                    } else {
+                        this.survivalConsole.openActionModal();
+                    }
+                }
+            } else if (e.code === 'KeyI') {
+                if (this.survivalConsole && !this.dialogueModal?.isOpen) {
+                    this.controls.unlock();
+                    if (this.survivalConsole.isInvestigationModalOpen) {
+                        this.survivalConsole.closeModals();
+                    } else {
+                        this.survivalConsole.openInvestigationModal();
+                    }
                 }
             }
         });
@@ -176,10 +198,17 @@ class LastCrewApp {
             this._onAuthSuccess(user);
         });
 
+        // Пульт операций выживания и расследования аварии «Горизонт-7»
+        this.survivalConsole = new SurvivalConsole(this.network, () => {
+            if (this.isAuthenticated && !this.dialogueModal?.isOpen) {
+                setTimeout(() => this.controls.lock(), 150);
+            }
+        });
+
         // Диалоговое окно
         this.dialogueModal = new DialogueModal(this.network, () => {
             // При закрытии диалога восстанавливаем захват мыши
-            if (this.isAuthenticated) {
+            if (this.isAuthenticated && !this.survivalConsole?.isActionModalOpen && !this.survivalConsole?.isInvestigationModalOpen) {
                 setTimeout(() => this.controls.lock(), 150);
             }
         });
@@ -230,7 +259,6 @@ class LastCrewApp {
         if (this.playerInfoPill) this.playerInfoPill.style.display = 'inline-flex';
         if (this.posInfoPill) this.posInfoPill.style.display = 'inline-flex';
         if (this.controlsHint) this.controlsHint.style.display = 'block';
-        if (this.stationTelemetryHud) this.stationTelemetryHud.style.display = 'block';
 
         // Анимация плавного пробуждения в криокапсуле
         this._triggerAwakeningEffect();

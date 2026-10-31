@@ -1,6 +1,7 @@
 /** Stable v1 transport contract. Runtime JS client can use JSDoc import types.
  * Phase-2 snapshot/chunk/agent payloads added.
  * Phase-4 AI agent talk & reply with citations added.
+ * Cooperative Survival Scenario: GameState, Action and Investigation payloads.
  */
 export const PROTOCOL_VERSION = 1 as const;
 export interface User { id: string; username: string }
@@ -50,16 +51,48 @@ export interface AgentReply {
   citation?: Citation;
 }
 
+export interface GameState {
+  cycle: number;
+  max_cycles: number;
+  oxygen: number;
+  energy: number;
+  hull: number;
+  reactor_active: boolean;
+  cooling_repaired: boolean;
+  greenhouse_active: boolean;
+  battery_available: boolean;
+  course_calculated: boolean;
+  archive_restored: boolean;
+  investigation_solved: boolean;
+  game_over: boolean;
+  victory: boolean;
+  victory_type: string;
+  unlocked_clues: string[];
+  logs: string[];
+}
+
+export interface GameActionPayload {
+  action: string;
+}
+
+export interface InvestigationSolvePayload {
+  clues: string[];
+}
+
 export interface ClientPayloads {
   'player.init': { client_time?: number; username?: string };
   'player.input': PlayerInput;
   'agent.talk': AgentTalkRequest;
+  'game.action': GameActionPayload;
+  'investigation.solve': InvestigationSolvePayload;
   ping: Record<string, unknown>;
 }
 export interface ServerPayloads {
   'player.ready': { user: User; state: PlayerState; capabilities: Capabilities };
   'world.snapshot': WorldSnapshot;
   'agent.reply': AgentReply;
+  'game.state': GameState;
+  'investigation.result': { solved: boolean; message: string };
   pong: Record<string, unknown>;
   error: ErrorPayload;
 }

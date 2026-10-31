@@ -17,29 +17,35 @@ import (
 )
 
 type Module struct {
-	players storage.Players
-	world   world.Service
-	agents  agents.Service
-	log     *slog.Logger
-	mu      sync.Mutex
-	ready   map[string]model.PlayerState
+	players  storage.Players
+	world    world.Service
+	agents   agents.Service
+	scenario *ScenarioEngine
+	hub      *realtime.Hub
+	log      *slog.Logger
+	mu       sync.Mutex
+	ready    map[string]model.PlayerState
 }
 
 // New creates a game module with authoritative world service and local AI agents service.
 func New(players storage.Players, worldService world.Service, agentService agents.Service, log *slog.Logger) *Module {
 	return &Module{
-		players: players,
-		world:   worldService,
-		agents:  agentService,
-		log:     log,
-		ready:   make(map[string]model.PlayerState),
+		players:  players,
+		world:    worldService,
+		agents:   agentService,
+		scenario: NewScenarioEngine(),
+		log:      log,
+		ready:    make(map[string]model.PlayerState),
 	}
 }
 
 func (m *Module) Register(h *realtime.Hub) {
+	m.hub = h
 	h.Handle("player.init", m.init)
 	h.Handle("player.input", m.input)
 	h.Handle("agent.talk", m.talk)
+	h.Handle("game.action", m.action)
+	h.Handle("investigation.solve", m.solve)
 	h.OnDisconnect(m.leave)
 }
 
@@ -63,7 +69,7 @@ func (m *Module) init(ctx context.Context, s realtime.Session, e protocol.Envelo
 		var err error
 		state, err = m.players.LoadPlayer(ctx, id)
 		if errors.Is(err, storage.ErrNotFound) {
-			// Спавн в криокапсуле станции «Гелиос-7» (жилой отсек [-15.0, 1.7, 0.0])
+			// Спавн в криокапсуле станции «Горизонт-7» (жилой отсек [-15.0, 1.7, 0.0])
 			state = model.PlayerState{
 				PlayerID:  id,
 				Position:  model.Position{X: -15.0, Y: 1.7, Z: 0.0},
@@ -100,6 +106,11 @@ func (m *Module) init(ctx context.Context, s realtime.Session, e protocol.Envelo
 			Agents:   m.agents != nil,
 		},
 	})
+
+	// Синхронизация общего состояния корабля «Горизонт-7»
+	if m.scenario != nil {
+		s.Send("game.state", e.RequestID, m.scenario.GetState())
+	}
 }
 
 func (m *Module) input(ctx context.Context, s realtime.Session, e protocol.Envelope) {
@@ -166,6 +177,62 @@ func (m *Module) talk(ctx context.Context, s realtime.Session, e protocol.Envelo
 	}
 
 	s.Send("agent.reply", e.RequestID, reply)
+}
+
+func (m *Module) action(ctx context.Context, s realtime.Session, e protocol.Envelope) {
+	var input protocol.GameActionRequest
+	if err := protocol.DecodePayload(e.Payload, &input); err != nil {
+		sendError(s, e, "invalid_payload", "Invalid game.action payload")
+		return
+	}
+
+	if m.scenario == nil {
+		sendError(s, e, "feature_disabled", "Scenario engine is not initialized")
+		return
+	}
+
+	state, err := m.scenario.ExecuteAction(input.Action)
+	if err != nil {
+		sendError(s, e, "action_failed", err.Error())
+		return
+	}
+
+	if m.hub != nil {
+		m.hub.Broadcast("game.state", state)
+	} else {
+		s.Send("game.state", e.RequestID, state)
+	}
+}
+
+func (m *Module) solve(ctx context.Context, s realtime.Session, e protocol.Envelope) {
+	var input protocol.InvestigationSolveRequest
+	if err := protocol.DecodePayload(e.Payload, &input); err != nil {
+		sendError(s, e, "invalid_payload", "Invalid investigation.solve payload")
+		return
+	}
+
+	if m.scenario == nil {
+		sendError(s, e, "feature_disabled", "Scenario engine is not initialized")
+		return
+	}
+
+	solved, msg, err := m.scenario.SolveInvestigation(input.Clues)
+	if err != nil {
+		sendError(s, e, "solve_failed", err.Error())
+		return
+	}
+
+	state := m.scenario.GetState()
+	if m.hub != nil {
+		m.hub.Broadcast("game.state", state)
+	} else {
+		s.Send("game.state", e.RequestID, state)
+	}
+
+	s.Send("investigation.result", e.RequestID, map[string]any{
+		"solved":  solved,
+		"message": msg,
+	})
 }
 
 func (m *Module) leave(ctx context.Context, user model.User) {

@@ -2,15 +2,13 @@ import * as THREE from 'three';
 
 /**
  * CrewManager.js
- * Управление ИИ-членами экипажа станции «Последний экипаж».
+ * Управление 3D-моделями экипажа и бортовым ИИ АСТРА корабля «Горизонт-7».
  * 
- * Предметная область: энергия, экология замкнутых систем и основы космонавтики.
  * Персонажи:
- * 1. Инженер Марк Вэнс — реакторный отсек, прагматик, спасает термоядерный генератор.
- * 2. Биолог Д-р Елена Ростова — оранжерея/биокупол, спасает гидропонику и кислород O2.
- * 3. Капитан Командор Александр Волк — командный мостик, координирует команду, ищет третье решение.
- * 
- * Каждый обладает уникальной 3D-внешностью, характером и диалоговым контекстом.
+ * 1. Инженер Марк Вэнс — реакторный отсек (13.5, 0, 0), спасает термоядерный генератор.
+ * 2. Биолог Д-р Елена Ростова — оранжерея (0, 0, 13.5), защищает гидропонику и кислород.
+ * 3. Капитан Александр Волк — командный мостик (0, 0, 3.5), координирует экипаж.
+ * 4. Бортовой ИИ АСТРА — командный мостик (0, 0, -3.5), голографическое ядро.
  */
 export class CrewManager {
     constructor(scene) {
@@ -32,16 +30,15 @@ export class CrewManager {
                 themeColor: '#ff6b1a',
                 threeColor: 0xff6b1a,
                 secondaryColor: 0x1f242d,
-                position: new THREE.Vector3(14, 0, 0),
+                position: new THREE.Vector3(13.5, 0, 0),
                 rotationY: -Math.PI / 2,
-                personality: 'Прагматичный технарь. Опирается на жесткие расчеты термодинамики, эмоционален в спорах о технике, не доверяет биологическим системам.',
+                personality: 'Прагматичный технарь. Опирается на жесткие расчеты термодинамики. Знает, что температура скакнула раньше падения мощности.',
                 avatarSvg: 'engineer',
-                dilemmaStance: 'Требует направить 100% оставшейся энергии на удержание магнитного поля реактора.',
-                initialGreeting: 'С возвращением из криосна! У нас критическая ситуация: контур охлаждения реактора пробит. Если реактор расплавится — станция замерзнет через 40 минут! Плевать на оранжерею, спасаем генератор!',
+                initialGreeting: 'С возвращением из криосна! Контур охлаждения повреждён. Если реактор перегреется — корабль разорвёт или замёрзнет за 40 минут. Нужно срочно восстановить охлаждение!',
                 knowledgeTopics: [
-                    { id: 'reactor_status', label: 'Состояние реактора', text: 'Магнитные ловушки нестабильны. Плазма греет стенки до 1800 К. Нужно минимум 15 МВт для удержания.' },
-                    { id: 'greenhouse_opinion', label: 'Что насчет оранжереи?', text: 'Биолог витает в облаках со своими помидорами! Без электричества её гидропоника всё равно превратится в лёд. Физику не обманешь.' },
-                    { id: 'third_solution', label: 'Есть ли компромисс?', text: 'Если мы сможем запустить импульсный цикл охлаждения дейтерия с частотой 2 Гц, мы сэкономим до 40% мощности. Но кто рискнет рассчитать термодинамику?' }
+                    { id: 'reactor_status', label: 'Состояние реактора', text: 'Магнитные ловушки нестабильны. Без охлаждения реактор наносит 12 урона корпусу каждый цикл!' },
+                    { id: 'cooling_filter', label: 'Контур охлаждения', text: 'Поток упал до критических 14%. Давление в фильтре зашкаливает — там что-то застряло.' },
+                    { id: 'battery_advice', label: 'Резервная батарея', text: 'Батарея даст нам +25 E мгновенно, но обесточит передатчик и закроет комбинированный план манёвра.' }
                 ]
             },
             biologist: {
@@ -52,44 +49,58 @@ export class CrewManager {
                 themeColor: '#00e5a3',
                 threeColor: 0x00e5a3,
                 secondaryColor: 0x243330,
-                position: new THREE.Vector3(0, 0, 14),
+                position: new THREE.Vector3(0, 0, 13.5),
                 rotationY: Math.PI,
-                personality: 'Глубокий исследователь, защитница жизни. Понимает хрупкость замкнутых экосистем, мыслит долгосрочным выживанием людей.',
+                personality: 'Глубокий исследователь, защитница жизни. Проверила биопробы: заражения нет, водоросли увядают чисто из-за отсутствия света.',
                 avatarSvg: 'biologist',
-                dilemmaStance: 'Требует сохранить фитоосвещение и терморегуляцию гидропоники ради регенерации кислорода.',
-                initialGreeting: 'Вы проснулись! Дышите глубже, пока есть чем. Уровень O2 упал до 68%. Инженер хочет обесточить биокупол! Если температура упадет ниже +8°C, штаммы водорослей-оксигенаторов погибнут, и мы задохнемся!',
+                initialGreeting: 'Вы проснулись! Дышите глубже, пока есть чем. Без оранжереи мы теряем 8 единиц O2 за цикл. Запуск фитоламп сократит потери до 3 единиц!',
                 knowledgeTopics: [
-                    { id: 'o2_cycle', label: 'Цикл кислорода', text: 'Наши водоросли хлореллы и вертикальные фермы дают 94% кислорода на станции. Без них фильтры исчерпают ресурс за 48 часов.' },
-                    { id: 'engineer_opinion', label: 'Что насчет реактора?', text: 'Марк мыслит только мегаваттами. Зачем нам работающий реактор на станции, полной задохнувшихся трупов? Мы должны бороться за биосферу!' },
-                    { id: 'third_solution', label: 'Поиск третьего пути', text: 'Если перевести водоросли на анаэробный ночной метаболизм и снизить спектр ламп до 430 нм, мы снизим потребление оранжереи на 60% без гибели экосистемы.' }
+                    { id: 'o2_cycle', label: 'Запас кислорода', text: 'Стартовые 64 единицы O2 иссякнут за 8 циклов, если не запустить оранжерею (12 E).' },
+                    { id: 'bio_samples', label: 'Результаты биопроб', text: 'Я проверила микроструктуру водорослей Chlorella vulgaris под микроскопом. Никакой инфекции нет!' },
+                    { id: 'night_mode', label: 'Фитофотоника 430 нм', text: 'Узкополосный спектр 430 нм позволяет культуре фотосинтезировать при пониженном потреблении тепла.' }
                 ]
             },
             captain: {
                 id: 'captain',
                 name: 'Командор Александр Волк',
-                role: 'Командир станции «Гелиос-7»',
-                locationName: 'Командный мостик (Центральный хаб)',
+                role: 'Командир корабля «Горизонт-7»',
+                locationName: 'Командный мостик (Тактический пульт)',
                 themeColor: '#38bdf8',
                 threeColor: 0x38bdf8,
                 secondaryColor: 0x0f172a,
-                position: new THREE.Vector3(0, 0, -4),
-                rotationY: 0,
-                personality: 'Дисциплинированный, дальновидный лидер. Уравновешивает споры, стремится объединить команду ради нестандартного решения.',
+                position: new THREE.Vector3(0, 0, 3.5),
+                rotationY: Math.PI,
+                personality: 'Дисциплинированный стратег. Держит команду от паники, ищет доказательства в архиве и готовит безопасный курс.',
                 avatarSvg: 'captain',
-                dilemmaStance: 'Ищет синергетический компромисс между инженером и биологом, предотвращая раскол экипажа.',
-                initialGreeting: 'Добро пожаловать на мостик, специалист. С Землей связи нет. Станция повреждена, энергия на исходе. Инженер и биолог спорят насмерть. Мне нужен ясный разум, чтобы найти третье решение.',
+                initialGreeting: 'Добро пожаловать на мостик, специалист. Мы на опасной траектории у Юпитера. У нас 8 циклов. Мне нужны выверенные решения!',
                 knowledgeTopics: [
-                    { id: 'disaster_info', label: 'Что случилось?', text: 'В 03:40 произошел внешний удар — возможно, микрометеоритный рой или взрыв криогенного бака в грузовом доке. Данные черного ящика повреждены.' },
-                    { id: 'crew_dilemma', label: 'В чем суть спора?', text: 'У нас осталось 20 МВт резервной мощности. Марку нужно 15 МВт на реактор, Елене — 12 МВт на оранжерею. 15 + 12 = 27 МВт, а у нас только 20. Команда должна объединить усилия.' },
-                    { id: 'third_solution', label: 'Приказ командира', text: 'Я приказываю: найти способ синхронизировать импульсный режим реактора и ночной режим биокупола. Тогда мы уложимся в 18 МВт и спасем станцию!' }
+                    { id: 'disaster_log', label: 'Журнал аварии', text: 'В журнале обнаружена команда на отключение оранжереи, но временная метка повреждена. Нужно восстановить архив за 2 E!' },
+                    { id: 'course_plan', label: 'Расчёт курса', text: 'Подготовка гравитационного манёвра стоит 4 E. Без неё план «Восстановленная экосистема» невозможен.' },
+                    { id: 'final_options', label: 'Планы спасения', text: 'Если сохраним батарею до финала — выполним комбинированный импульс. Иначе придётся идти на риск или эвакуироваться!' }
+                ]
+            },
+            astra: {
+                id: 'astra',
+                name: 'Бортовой ИИ АСТРА',
+                role: 'Искусственный интеллект корабля',
+                locationName: 'Центральный голографический пьедестал',
+                themeColor: '#00f5ff',
+                threeColor: 0x00f5ff,
+                secondaryColor: 0x082f49,
+                position: new THREE.Vector3(0, 0, -3.5),
+                rotationY: 0,
+                personality: 'Аварийная Система Телеметрии и Расчёта Алгоритмов. Вежливая, точная, восстанавливает логику расследования по мере нахождения улик.',
+                avatarSvg: 'astra',
+                initialGreeting: 'Экипаж, вы пробуждены аварийным протоколом. При текущем расходе кислорода у нас осталось восемь циклов. Причина происшествия анализируется.',
+                knowledgeTopics: [
+                    { id: 'astra_status', label: 'Доклад телеметрии', text: 'O2: 64%, Энергия: 35%, Корпус: 70%. Реактор и оранжерея выключены. Охлаждение повреждено.' },
+                    { id: 'astra_investigation', label: 'Причина аварии', text: 'До восстановления архива я не могу установить первопричину. Требуются данные внешнего датчика и фильтра.' },
+                    { id: 'astra_advice', label: 'Рекомендация по шагам', text: 'Предлагаю сначала запустить реактор и восстановить охлаждение, затем запустить оранжерею и восстановить архив.' }
                 ]
             }
         };
     }
 
-    /**
-     * Создание уникальных 3D-моделей персонажей экипажа
-     */
     _spawnCrewModels() {
         for (const [key, profile] of Object.entries(this.profiles)) {
             const memberGroup = new THREE.Group();
@@ -97,58 +108,157 @@ export class CrewManager {
             memberGroup.position.copy(profile.position);
             memberGroup.rotation.y = profile.rotationY;
 
-            // 1. Постамент / зона взаимодействия
-            const padGeo = new THREE.CylinderGeometry(1.2, 1.3, 0.08, 24);
-            const padMat = new THREE.MeshStandardMaterial({
-                color: 0x161b22,
-                roughness: 0.6,
-                metalness: 0.4
-            });
-            const padMesh = new THREE.Mesh(padGeo, padMat);
-            padMesh.position.y = 0.04;
-            padMesh.receiveShadow = true;
-            memberGroup.add(padMesh);
+            let charMesh;
+            if (profile.id === 'astra') {
+                charMesh = this._createAstraHologramModel(profile);
+            } else {
+                charMesh = this._createHumanCrewModel(profile);
+            }
+            memberGroup.add(charMesh);
 
-            // Светящееся неоновое кольцо статуса вокруг ног
-            const ringGeo = new THREE.RingGeometry(1.0, 1.15, 32);
+            // 2D/3D динамический бейдж над головой
+            const nameplate = this._createNameplate(profile);
+            nameplate.position.y = profile.id === 'astra' ? 2.6 : 2.3;
+            memberGroup.add(nameplate);
+
+            // Неоновый маркер на полу
+            const ringGeo = new THREE.RingGeometry(0.8, 0.95, 32);
             const ringMat = new THREE.MeshBasicMaterial({
                 color: profile.threeColor,
-                side: THREE.DoubleSide
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.6
             });
             const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-            ringMesh.rotation.x = -Math.PI / 2;
-            ringMesh.position.y = 0.09;
+            ringMesh.rotation.x = Math.PI / 2;
+            ringMesh.position.y = 0.02;
             memberGroup.add(ringMesh);
-
-            // 2. Тело скафандра персонажа (уникальное для каждого)
-            const bodyGroup = this._createCharacterBody(profile);
-            memberGroup.add(bodyGroup);
-
-            // 3. Плавающий голографический маркер имени над головой
-            const nameplate = this._createNameplate(profile);
-            nameplate.position.y = 2.4;
-            memberGroup.add(nameplate);
 
             this.scene.add(memberGroup);
 
             this.crewMembers.set(profile.id, {
-                profile,
                 group: memberGroup,
-                bodyGroup,
-                nameplate,
-                ringMesh,
+                bodyGroup: charMesh,
+                ringMesh: ringMesh,
+                profile: profile,
                 basePos: profile.position.clone()
             });
         }
     }
 
     /**
-     * Процедурная генерация уникального скафандра в зависимости от роли
+     * Создание уникальной голограммы бортового ИИ АСТРА
      */
-    _createCharacterBody(profile) {
+    _createAstraHologramModel(profile) {
+        const astraGroup = new THREE.Group();
+
+        // 1. Пьедестал на полу
+        const pedestalGeo = new THREE.CylinderGeometry(1.0, 1.3, 0.35, 24);
+        const pedestalMat = new THREE.MeshStandardMaterial({
+            color: 0x0f172a,
+            roughness: 0.4,
+            metalness: 0.8
+        });
+        const pedestal = new THREE.Mesh(pedestalGeo, pedestalMat);
+        pedestal.position.y = 0.175;
+        pedestal.receiveShadow = true;
+        astraGroup.add(pedestal);
+
+        // Светящееся неоновое кольцо эмиттера
+        const emitterRingGeo = new THREE.TorusGeometry(0.85, 0.05, 16, 48);
+        const emitterRingMat = new THREE.MeshStandardMaterial({
+            color: 0x00f5ff,
+            emissive: 0x00f5ff,
+            emissiveIntensity: 1.0,
+            roughness: 0.2,
+            metalness: 0.8
+        });
+        const emitterRing = new THREE.Mesh(emitterRingGeo, emitterRingMat);
+        emitterRing.rotation.x = Math.PI / 2;
+        emitterRing.position.y = 0.36;
+        astraGroup.add(emitterRing);
+
+        // 2. Голографический конус восходящего света
+        const beamGeo = new THREE.CylinderGeometry(0.4, 0.85, 2.0, 16, 1, true);
+        const beamMat = new THREE.MeshBasicMaterial({
+            color: 0x00f5ff,
+            transparent: true,
+            opacity: 0.15,
+            side: THREE.DoubleSide
+        });
+        const beam = new THREE.Mesh(beamGeo, beamMat);
+        beam.position.y = 1.35;
+        astraGroup.add(beam);
+
+        // 3. Центральное парящее ядро ИИ
+        const coreGeo = new THREE.IcosahedronGeometry(0.42, 1);
+        const coreMat = new THREE.MeshStandardMaterial({
+            color: 0x00f5ff,
+            emissive: 0x00b4d8,
+            emissiveIntensity: 0.9,
+            roughness: 0.1,
+            metalness: 0.9
+        });
+        const core = new THREE.Mesh(coreGeo, coreMat);
+        core.position.y = 1.6;
+        astraGroup.add(core);
+
+        // Внутренний полигональный каркас
+        const wireGeo = new THREE.IcosahedronGeometry(0.48, 1);
+        const wireMat = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            wireframe: true,
+            transparent: true,
+            opacity: 0.7
+        });
+        const wireCore = new THREE.Mesh(wireGeo, wireMat);
+        wireCore.position.y = 1.6;
+        astraGroup.add(wireCore);
+
+        // 4. Встречно вращающиеся кольца гироскопа
+        const ring1Geo = new THREE.TorusGeometry(0.72, 0.025, 16, 48);
+        const ring1 = new THREE.Mesh(ring1Geo, emitterRingMat);
+        ring1.position.y = 1.6;
+        astraGroup.add(ring1);
+
+        const ring2Geo = new THREE.TorusGeometry(0.92, 0.02, 16, 48);
+        const ring2 = new THREE.Mesh(ring2Geo, emitterRingMat);
+        ring2.position.y = 1.6;
+        astraGroup.add(ring2);
+
+        // 5. Орбитальные узлы данных (4 спутника)
+        const satellites = [];
+        for (let i = 0; i < 4; i++) {
+            const satGeo = new THREE.OctahedronGeometry(0.08);
+            const satMat = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                emissive: 0x00f5ff,
+                emissiveIntensity: 1.0
+            });
+            const sat = new THREE.Mesh(satGeo, satMat);
+            sat.position.y = 1.6;
+            astraGroup.add(sat);
+            satellites.push(sat);
+        }
+
+        astraGroup.userData = {
+            isAstra: true,
+            core,
+            wireCore,
+            ring1,
+            ring2,
+            satellites
+        };
+
+        return astraGroup;
+    }
+
+    /**
+     * Создание детального 3D-скафандра для людей
+     */
+    _createHumanCrewModel(profile) {
         const charGroup = new THREE.Group();
 
-        // Основные материалы
         const suitMat = new THREE.MeshStandardMaterial({
             color: profile.secondaryColor,
             roughness: 0.4,
@@ -187,7 +297,7 @@ export class CrewManager {
         legRight.castShadow = true;
         charGroup.add(legRight);
 
-        // Ботинки скафандра
+        // Ботинки
         const bootGeo = new THREE.BoxGeometry(0.18, 0.14, 0.28);
         const bootL = new THREE.Mesh(bootGeo, accentMat);
         bootL.position.set(-0.2, 0.1, 0.05);
@@ -199,28 +309,28 @@ export class CrewManager {
         bootR.castShadow = true;
         charGroup.add(bootR);
 
-        // Торс (для инженера — усиленный каркас, для биолога — гладкий легкий, для капитана — офицерский китель)
+        // Торс (модифицируется по роли)
         let torsoGeo;
         if (profile.id === 'engineer') {
-            torsoGeo = new THREE.BoxGeometry(0.65, 0.75, 0.4);
+            torsoGeo = new THREE.BoxGeometry(0.68, 0.78, 0.42);
         } else if (profile.id === 'captain') {
-            torsoGeo = new THREE.CylinderGeometry(0.28, 0.24, 0.75, 12);
+            torsoGeo = new THREE.CylinderGeometry(0.29, 0.25, 0.76, 12);
         } else {
-            torsoGeo = new THREE.CylinderGeometry(0.24, 0.22, 0.72, 12);
+            torsoGeo = new THREE.CylinderGeometry(0.25, 0.23, 0.72, 12);
         }
         const torso = new THREE.Mesh(torsoGeo, suitMat);
         torso.position.y = 1.15;
         torso.castShadow = true;
         charGroup.add(torso);
 
-        // Нагрудная пластина со светящимися индикаторами
-        const chestGeo = new THREE.BoxGeometry(0.35, 0.3, 0.06);
+        // Нагрудная пластина
+        const chestGeo = new THREE.BoxGeometry(0.36, 0.32, 0.06);
         const chest = new THREE.Mesh(chestGeo, accentMat);
-        chest.position.set(0, 1.25, 0.18);
+        chest.position.set(0, 1.25, 0.19);
         charGroup.add(chest);
 
-        // Рюкзак жизнеобеспечения за спиной
-        const packGeo = new THREE.BoxGeometry(0.4, 0.5, 0.22);
+        // Рюкзак системы жизнеобеспечения
+        const packGeo = new THREE.BoxGeometry(0.42, 0.52, 0.22);
         const pack = new THREE.Mesh(packGeo, metalMat);
         pack.position.set(0, 1.2, -0.22);
         pack.castShadow = true;
@@ -247,46 +357,54 @@ export class CrewManager {
         helmet.castShadow = true;
         charGroup.add(helmet);
 
-        // Визор шлема (уникальный цвет свечения)
-        const visorGeo = new THREE.SphereGeometry(0.2, 16, 16, 0, Math.PI);
+        // Визор шлема
+        const visorGeo = new THREE.SphereGeometry(0.18, 16, 16, 0, Math.PI);
         const visor = new THREE.Mesh(visorGeo, visorMat);
         visor.rotation.y = Math.PI / 2;
-        visor.rotation.x = -Math.PI / 2;
-        visor.position.set(0, 1.72, 0.08);
+        visor.position.set(0, 1.72, 0.12);
         charGroup.add(visor);
 
-        // Уникальный атрибут персонажа в руках/на поясе:
+        // Ролевые аксессуары
         if (profile.id === 'engineer') {
-            // Термо-сварочный резак и ящик с инструментами
-            const toolGeo = new THREE.CylinderGeometry(0.04, 0.05, 0.4, 8);
-            const tool = new THREE.Mesh(toolGeo, accentMat);
-            tool.position.set(0.38, 0.85, 0.2);
-            tool.rotation.x = Math.PI / 3;
+            // Наплечный прожектор и инструмент на поясе
+            const lightGeo = new THREE.CylinderGeometry(0.06, 0.08, 0.14, 12);
+            const light = new THREE.Mesh(lightGeo, accentMat);
+            light.position.set(-0.25, 1.6, 0.1);
+            light.rotation.x = Math.PI / 3;
+            charGroup.add(light);
+
+            const toolGeo = new THREE.BoxGeometry(0.08, 0.35, 0.1);
+            const tool = new THREE.Mesh(toolGeo, metalMat);
+            tool.position.set(0.36, 0.85, 0.1);
             charGroup.add(tool);
         } else if (profile.id === 'biologist') {
-            // Голографический планшет с ростком
-            const padGeo = new THREE.BoxGeometry(0.25, 0.02, 0.35);
+            // Планшет с биопробами в руке и био-колба
+            const padGeo = new THREE.BoxGeometry(0.24, 0.02, 0.32);
             const pad = new THREE.Mesh(padGeo, accentMat);
             pad.position.set(0, 1.0, 0.3);
             pad.rotation.x = -Math.PI / 6;
             charGroup.add(pad);
+
+            const vialGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.22, 10);
+            const vialMat = new THREE.MeshStandardMaterial({ color: 0x00ff88, emissive: 0x00ff88, emissiveIntensity: 0.8 });
+            const vial = new THREE.Mesh(vialGeo, vialMat);
+            vial.position.set(-0.35, 0.9, 0);
+            charGroup.add(vial);
         } else if (profile.id === 'captain') {
-            // Капитанские золотые эполеты
-            const epauletGeo = new THREE.BoxGeometry(0.22, 0.06, 0.14);
+            // Командирские золотые эполеты и тактический визор
+            const epauletGeo = new THREE.BoxGeometry(0.24, 0.06, 0.14);
             const epL = new THREE.Mesh(epauletGeo, accentMat);
-            epL.position.set(-0.35, 1.5, 0);
+            epL.position.set(-0.36, 1.5, 0);
             charGroup.add(epL);
+
             const epR = new THREE.Mesh(epauletGeo, accentMat);
-            epR.position.set(0.35, 1.5, 0);
+            epR.position.set(0.36, 1.5, 0);
             charGroup.add(epR);
         }
 
         return charGroup;
     }
 
-    /**
-     * Создание динамической 2D/3D плашки над головой
-     */
     _createNameplate(profile) {
         const canvas = document.createElement('canvas');
         canvas.width = 512;
@@ -294,7 +412,7 @@ export class CrewManager {
         const ctx = canvas.getContext('2d');
 
         // Фон бейджа
-        ctx.fillStyle = 'rgba(13, 17, 23, 0.85)';
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
         ctx.roundRect(10, 10, 492, 108, 16);
         ctx.fill();
 
@@ -303,12 +421,13 @@ export class CrewManager {
         ctx.roundRect(10, 10, 492, 108, 16);
         ctx.stroke();
 
-        // Текст
+        // Текст имени
         ctx.fillStyle = profile.themeColor;
         ctx.font = 'bold 34px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(profile.name.toUpperCase(), 256, 55);
 
+        // Текст роли
         ctx.fillStyle = '#cbd5e1';
         ctx.font = '600 24px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
         ctx.fillText(profile.role, 256, 95);
@@ -327,28 +446,52 @@ export class CrewManager {
         return sprite;
     }
 
-    /**
-     * Обновление анимаций и проверка расстояния до игрока
-     * @param {THREE.Vector3} playerPos 
-     * @param {number} time 
-     */
     update(playerPos, time) {
         let closest = null;
         let minDistance = Infinity;
 
         for (const [id, member] of this.crewMembers.entries()) {
-            // Небольшая idle-анимация покачивания (дыхание)
-            if (member.bodyGroup) {
-                member.bodyGroup.position.y = Math.sin(time * 2.0 + (id.length)) * 0.03;
+            // Анимация АСТРЫ (голограмма)
+            if (member.group.userData?.isAstra) {
+                const u = member.group.userData;
+                const floatY = 1.6 + Math.sin(time * 2.5) * 0.07;
+                u.core.position.y = floatY;
+                u.wireCore.position.y = floatY;
+                u.wireCore.rotation.y = time * 0.8;
+                u.wireCore.rotation.x = time * 0.5;
+
+                u.ring1.position.y = floatY;
+                u.ring1.rotation.x = time * 1.6;
+                u.ring1.rotation.y = time * 1.1;
+
+                u.ring2.position.y = floatY;
+                u.ring2.rotation.x = -time * 1.3;
+                u.ring2.rotation.z = time * 1.5;
+
+                u.satellites.forEach((sat, idx) => {
+                    const angle = time * 2.0 + (idx * Math.PI / 2);
+                    const radius = 1.25;
+                    sat.position.set(
+                        Math.cos(angle) * radius,
+                        floatY + Math.sin(time * 3.0 + idx) * 0.15,
+                        Math.sin(angle) * radius
+                    );
+                    sat.rotation.y = time * 4.0;
+                });
+            } else {
+                // Дыхание людей
+                if (member.bodyGroup) {
+                    member.bodyGroup.position.y = Math.sin(time * 2.0 + (id.length)) * 0.03;
+                }
             }
 
-            // Пульсация неонового кольца
+            // Пульсация неонового круга на полу
             if (member.ringMesh) {
                 const pulse = 1.0 + Math.sin(time * 3.0) * 0.08;
                 member.ringMesh.scale.set(pulse, pulse, 1);
             }
 
-            // Расчет дистанции до игрока в плоскости XZ
+            // Дистанция до игрока
             const dist = playerPos.distanceTo(member.basePos);
             if (dist < minDistance) {
                 minDistance = dist;
@@ -359,13 +502,12 @@ export class CrewManager {
                 };
             }
 
-            // Если игрок рядом (< 5м), персонаж слегка поворачивается лицом к игроку
-            if (dist < 5.0) {
+            // Поворот людей к игроку при приближении
+            if (dist < 5.0 && !member.group.userData?.isAstra) {
                 const targetRotation = Math.atan2(
                     playerPos.x - member.basePos.x,
                     playerPos.z - member.basePos.z
                 );
-                // Плавная интерполяция поворота к игроку
                 member.group.rotation.y = THREE.MathUtils.lerp(
                     member.group.rotation.y,
                     targetRotation,
@@ -374,7 +516,6 @@ export class CrewManager {
             }
         }
 
-        // Интерактивная зона разговора — до 3.5 метров
         if (closest && closest.distance <= 3.5) {
             this.nearestMember = closest.profile;
         } else {
@@ -384,9 +525,6 @@ export class CrewManager {
         return this.nearestMember;
     }
 
-    /**
-     * Получить профиль по идентификатору
-     */
     getProfile(id) {
         return this.profiles[id] || null;
     }

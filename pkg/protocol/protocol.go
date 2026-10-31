@@ -119,6 +119,16 @@ type AgentReply struct {
 	Citation  *Citation `json:"citation,omitempty"`
 }
 
+// GameActionRequest is sent by the client to propose or execute a cycle operation.
+type GameActionRequest struct {
+	Action string `json:"action"`
+}
+
+// InvestigationSolveRequest is sent by the client to submit 3 clues.
+type InvestigationSolveRequest struct {
+	Clues []string `json:"clues"`
+}
+
 func Message(kind, requestID string, payload any) (Envelope, error) {
 	b, err := json.Marshal(payload)
 	return Envelope{Version, kind, requestID, b}, err

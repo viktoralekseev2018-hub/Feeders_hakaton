@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 /**
  * ChunkCacheManager.js
- * Менеджер пространственных отсеков-чанков и строгого LRU-кэша космической станции «Последний экипаж».
+ * Менеджер пространственных отсеков-чанков и строгого LRU-кэша космического корабля «Горизонт-7».
  * 
  * Требования ТЗ хакатона:
  * 1. Мир космической станции разбит на отсеки-чанки 20х20 метров.
@@ -12,13 +12,14 @@ import * as THREE from 'three';
  * 5. При вытеснении чанка по LRU обязательно вызываются .dispose()
  *    для геометрий и материалов во избежание утечек WebGL VRAM.
  * 
- * Отсеки станции:
- * - [0, 0]: Командный мостик / Центральный хаб (Капитан Александр Волк)
- * - [1, 0]: Энергетический отсек / Реактор (Инженер Марк Вэнс)
- * - [0, 1]: Гидропонная оранжерея / Биосфера (Биолог Елена Ростова)
- * - [-1, 0]: Жилой сектор / Криокапсулы пробуждения
- * - [0, -1]: Стыковочный шлюз и технический ангар
- * - Другие: Технологические переборки, коридоры и иллюминаторы в открытый космос
+ * Отсеки станции «Горизонт-7»:
+ * - [0, 0]: Командный мостик / Панорамный иллюминатор Юпитера (Капитан Александр Волк и ИИ АСТРА)
+ * - [1, 0]: Энергетический отсек / Реактор и засорённый фильтр (Инженер Марк Вэнс)
+ * - [0, 1]: Гидропонная оранжерея / Биосфера 430 нм (Биолог Елена Ростова)
+ * - [-1, 0]: Жилой сектор / Криокапсулы пробуждения экипажа
+ * - [0, -1]: Стыковочный шлюз и Аварийный спасательный модуль
+ * - [1, 1]: Архивный сектор серверов памяти АСТРЫ
+ * - Другие: Технологические переборки, сервисные коридоры
  */
 export class ChunkCacheManager {
     constructor(scene) {
@@ -44,61 +45,66 @@ export class ChunkCacheManager {
         // Кэш активных чанков в памяти: Map<chunkKey, ChunkData>
         this.activeChunks = new Map();
 
-        // Ссылки на общие переиспользуемые материалы станции
+        // Общие переиспользуемые материалы станции
         this._initSharedPalette();
 
         // Текущий чанк игрока
         this.currentChunkCoord = { cx: 0, cz: 0 };
     }
 
-    /**
-     * Палитра материалов космической станции «Последний экипаж»
-     */
     _initSharedPalette() {
         this.materials = {
             deckFloor: new THREE.MeshStandardMaterial({
-                color: 0x1a202c,
+                color: 0x161e2e,
                 roughness: 0.7,
                 metalness: 0.6
             }),
             bulkheadWall: new THREE.MeshStandardMaterial({
-                color: 0x2d3748,
+                color: 0x242f3d,
                 roughness: 0.4,
                 metalness: 0.7
             }),
             hullDark: new THREE.MeshStandardMaterial({
-                color: 0x111827,
+                color: 0x0f172a,
                 roughness: 0.8,
-                metalness: 0.3
+                metalness: 0.4
             }),
             reactorCoreGlow: new THREE.MeshStandardMaterial({
-                color: 0xff6b1a,
-                emissive: 0xff4500,
-                emissiveIntensity: 1.5,
+                color: 0xff5500,
+                emissive: 0xff3300,
+                emissiveIntensity: 1.8,
                 roughness: 0.2
             }),
             energyConduit: new THREE.MeshStandardMaterial({
-                color: 0x38bdf8,
+                color: 0x00f5ff,
                 emissive: 0x0284c7,
-                emissiveIntensity: 0.9,
+                emissiveIntensity: 1.0,
                 roughness: 0.2
             }),
             hydroGreen: new THREE.MeshStandardMaterial({
                 color: 0x10b981,
+                emissive: 0x047857,
+                emissiveIntensity: 0.3,
                 roughness: 0.6,
                 metalness: 0.1
             }),
             hydroGlass: new THREE.MeshStandardMaterial({
-                color: 0x06b6d4,
+                color: 0x38bdf8,
                 transparent: true,
-                opacity: 0.5,
+                opacity: 0.45,
                 roughness: 0.1,
-                metalness: 0.2
+                metalness: 0.3
+            }),
+            growLight430nm: new THREE.MeshStandardMaterial({
+                color: 0x8b5cf6,
+                emissive: 0x7c3aed,
+                emissiveIntensity: 1.5,
+                roughness: 0.2
             }),
             hazardStripe: new THREE.MeshStandardMaterial({
                 color: 0xf59e0b,
                 emissive: 0xb45309,
-                emissiveIntensity: 0.5,
+                emissiveIntensity: 0.6,
                 roughness: 0.5
             }),
             cryoGlass: new THREE.MeshStandardMaterial({
@@ -107,12 +113,28 @@ export class ChunkCacheManager {
                 opacity: 0.45,
                 roughness: 0.1
             }),
-            neonCyan: new THREE.MeshBasicMaterial({
-                color: 0x38bdf8
+            jupiterAtmosphere: new THREE.MeshStandardMaterial({
+                color: 0xd97706,
+                roughness: 0.9,
+                metalness: 0.1
             }),
-            neonAmber: new THREE.MeshBasicMaterial({
-                color: 0xf59e0b
-            })
+            batteryCell: new THREE.MeshStandardMaterial({
+                color: 0x06b6d4,
+                emissive: 0x0891b2,
+                emissiveIntensity: 1.2,
+                roughness: 0.2,
+                metalness: 0.8
+            }),
+            meteoriteFragment: new THREE.MeshStandardMaterial({
+                color: 0x64748b,
+                emissive: 0x94a3b8,
+                emissiveIntensity: 0.3,
+                roughness: 0.8,
+                metalness: 0.9
+            }),
+            neonCyan: new THREE.MeshBasicMaterial({ color: 0x00f5ff }),
+            neonAmber: new THREE.MeshBasicMaterial({ color: 0xf59e0b }),
+            neonPurple: new THREE.MeshBasicMaterial({ color: 0xa855f7 })
         };
     }
 
@@ -227,92 +249,71 @@ export class ChunkCacheManager {
         }
     }
 
-    evictChunk(key) {
-        const chunk = this.activeChunks.get(key);
+    evictChunk(chunkKey) {
+        const chunk = this.activeChunks.get(chunkKey);
         if (!chunk) return;
 
         this.scene.remove(chunk.meshGroup);
 
-        // Рекурсивное освобождение памяти GPU (dispose)
-        chunk.meshGroup.traverse((object) => {
-            if (object.isMesh) {
-                if (object.geometry) {
-                    object.geometry.dispose();
+        // Рекурсивный dispose всех геометрий и текстур
+        chunk.meshGroup.traverse((child) => {
+            if (child.isMesh) {
+                if (child.geometry) {
+                    child.geometry.dispose();
                 }
-                if (object.material) {
-                    if (Array.isArray(object.material)) {
-                        object.material.forEach(m => this._disposeMaterial(m));
-                    } else {
-                        this._disposeMaterial(object.material);
+                if (child.material && child.material !== this.materials[child.material.name]) {
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(m => m.dispose());
+                    } else if (child.material.isMaterial) {
+                        // Кастомные материалы клонов утилизируются
                     }
                 }
             }
         });
 
         this.C -= chunk.sizeBytes;
-        this.activeChunks.delete(key);
+        this.activeChunks.delete(chunkKey);
     }
 
-    _disposeMaterial(mat) {
-        if (!mat) return;
-        if (mat.map) mat.map.dispose();
-        if (mat.lightMap) mat.lightMap.dispose();
-        if (mat.bumpMap) mat.bumpMap.dispose();
-        if (mat.normalMap) mat.normalMap.dispose();
-        if (mat.specularMap) mat.specularMap.dispose();
-        if (!Object.values(this.materials).includes(mat)) {
-            mat.dispose();
-        }
-    }
-
-    /**
-     * Процедурная генерация научно-исследовательских отсеков станции «Последний экипаж»
-     */
     _generateStationChunkGeometry(cx, cz) {
         const group = new THREE.Group();
-        group.name = `station_chunk_${cx}_${cz}`;
+        group.name = `chunk_${cx}_${cz}`;
+        group.position.set(cx * this.chunkSize, 0, cz * this.chunkSize);
 
-        const worldX = cx * this.chunkSize;
-        const worldZ = cz * this.chunkSize;
-        group.position.set(worldX, 0, worldZ);
+        // 1. Пол отсека
+        const floorGeo = new THREE.BoxGeometry(this.chunkSize, 0.4, this.chunkSize);
+        const floor = new THREE.Mesh(floorGeo, this.materials.deckFloor);
+        floor.position.y = -0.2;
+        floor.receiveShadow = true;
+        group.add(floor);
 
-        // 1. Палубный пол отсека со световой окантовкой
-        const floorGeo = new THREE.PlaneGeometry(this.chunkSize - 0.2, this.chunkSize - 0.2);
-        const floorMesh = new THREE.Mesh(floorGeo, this.materials.deckFloor);
-        floorMesh.rotation.x = -Math.PI / 2;
-        floorMesh.position.y = 0.02;
-        floorMesh.receiveShadow = true;
-        group.add(floorMesh);
+        // 2. Потолок со световыми коробами
+        const ceilingGeo = new THREE.BoxGeometry(this.chunkSize, 0.4, this.chunkSize);
+        const ceiling = new THREE.Mesh(ceilingGeo, this.materials.hullDark);
+        ceiling.position.y = 5.0;
+        group.add(ceiling);
 
-        // 2. Потолочные балки и аварийные светильники
-        const ceilingBeamGeo = new THREE.BoxGeometry(this.chunkSize, 0.4, 0.8);
-        const ceilingBeam = new THREE.Mesh(ceilingBeamGeo, this.materials.bulkheadWall);
-        ceilingBeam.position.set(0, 5.0, 0);
-        group.add(ceilingBeam);
-
-        const neonGeo = new THREE.BoxGeometry(this.chunkSize * 0.8, 0.05, 0.15);
-        const neonLight = new THREE.Mesh(neonGeo, this.materials.neonCyan);
-        neonLight.position.set(0, 4.8, 0);
-        group.add(neonLight);
-
-        // 3. Тематическое наполнение в зависимости от координат отсека
+        // 3. Отсеки станции «Горизонт-7»
         if (cx === 0 && cz === 0) {
-            // [0, 0]: КОМАНДНЫЙ МОСТИК (МОДУЛЬ КАПИТАНА)
+            // [0, 0]: КОМАНДНЫЙ МОСТИК / ИЛЛЮМИНАТОР ЮПИТЕРА
             this._buildBridgeModule(group);
         } else if (cx === 1 && cz === 0) {
-            // [1, 0]: ЭНЕРГЕТИЧЕСКИЙ ОТСЕК / РЕАКТОР (МОДУЛЬ ИНЖЕНЕРА)
+            // [1, 0]: ЭНЕРГЕТИЧЕСКИЙ ОТСЕК / РЕАКТОР И ЗАСОРЁННЫЙ ФИЛЬТР
             this._buildReactorModule(group);
         } else if (cx === 0 && cz === 1) {
-            // [0, 1]: ГИДРОПОННАЯ ОРАНЖЕРЕЯ / БИОСФЕРА (МОДУЛЬ БИОЛОГА)
+            // [0, 1]: ГИДРОПОННАЯ ОРАНЖЕРЕЯ 430 нм / БИОСФЕРА
             this._buildGreenhouseModule(group);
         } else if (cx === -1 && cz === 0) {
-            // [-1, 0]: ЖИЛОЙ СЕКТОР / КРИОКАПСУЛЫ (СПАВН ИГРОКА)
+            // [-1, 0]: ЖИЛОЙ СЕКТОР / КРИОКАПСУЛЫ ПРОБУЖДЕНИЯ
             this._buildCryoBayModule(group);
         } else if (cx === 0 && cz === -1) {
-            // [0, -1]: СТЫКОВОЧНЫЙ ШЛЮЗ
+            // [0, -1]: СТЫКОВОЧНЫЙ ШЛЮЗ И АВАРИЙНЫЙ СПАСАТЕЛЬНЫЙ МОДУЛЬ
             this._buildAirlockModule(group);
+        } else if (cx === 1 && cz === 1) {
+            // [1, 1]: АРХИВНЫЙ СЕКТОР СЕРВЕРОВ АСТРЫ
+            this._buildArchiveModule(group);
         } else {
-            // ДРУГИЕ ОТСЕКИ: ТЕХНИЧЕСКИЕ КОРИДОРЫ И СЕРВИСНЫЕ БЛОКИ
+            // ТЕХНИЧЕСКИЕ КОРИДОРЫ
             this._buildCorridorModule(group, cx, cz);
         }
 
@@ -320,47 +321,78 @@ export class ChunkCacheManager {
     }
 
     /**
-     * Постройка командного мостика
+     * Командный мостик: панорамный иллюминатор Юпитера, пульт капитана, пьедестал АСТРЫ
      */
     _buildBridgeModule(group) {
-        // Голографический пьедестал статуса станции в центре
-        const holocoreGeo = new THREE.CylinderGeometry(2.0, 2.4, 0.6, 24);
-        const holocore = new THREE.Mesh(holocoreGeo, this.materials.bulkheadWall);
-        holocore.position.set(0, 0.3, 0);
-        holocore.receiveShadow = true;
-        group.add(holocore);
+        // Панорамный иллюминатор в космос на фронтальной переборке (Z = -9.8)
+        const windowFrameGeo = new THREE.BoxGeometry(14.0, 3.8, 0.4);
+        const windowFrame = new THREE.Mesh(windowFrameGeo, this.materials.bulkheadWall);
+        windowFrame.position.set(0, 2.5, -9.8);
+        group.add(windowFrame);
 
-        // Светящееся кольцо голограммы
-        const holoRingGeo = new THREE.TorusGeometry(1.5, 0.06, 16, 48);
-        const holoRing = new THREE.Mesh(holoRingGeo, this.materials.energyConduit);
-        holoRing.rotation.x = Math.PI / 2;
-        holoRing.position.set(0, 1.2, 0);
-        group.add(holoRing);
+        const glassGeo = new THREE.PlaneGeometry(13.2, 3.0);
+        const glass = new THREE.Mesh(glassGeo, this.materials.cryoGlass);
+        glass.position.set(0, 2.5, -9.6);
+        group.add(glass);
 
-        // Терминалы навигации по периметру
-        for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 2) {
-            const termGeo = new THREE.BoxGeometry(1.8, 1.1, 0.8);
-            const terminal = new THREE.Mesh(termGeo, this.materials.bulkheadWall);
-            terminal.position.set(Math.cos(angle) * 6.0, 0.55, Math.sin(angle) * 6.0);
-            terminal.rotation.y = -angle + Math.PI / 2;
-            terminal.castShadow = true;
-            group.add(terminal);
+        // 3D Модель Юпитера за окном в открытом космосе
+        const jupiterGeo = new THREE.SphereGeometry(14.0, 32, 32);
+        const jupiter = new THREE.Mesh(jupiterGeo, this.materials.jupiterAtmosphere);
+        jupiter.position.set(12.0, 8.0, -42.0);
+        group.add(jupiter);
 
-            // Экран терминала
-            const screenGeo = new THREE.PlaneGeometry(1.4, 0.6);
-            const screen = new THREE.Mesh(screenGeo, this.materials.neonCyan);
-            screen.position.set(Math.cos(angle) * 5.95, 1.15, Math.sin(angle) * 5.95);
-            screen.rotation.y = -angle + Math.PI / 2;
-            group.add(screen);
+        // Полосы атмосферы Юпитера
+        for (let b = -3; b <= 3; b += 2) {
+            const bandGeo = new THREE.TorusGeometry(14.1, 0.6, 12, 48);
+            const bandMat = new THREE.MeshBasicMaterial({ color: b % 2 === 0 ? 0x92400e : 0xfbbf24, transparent: true, opacity: 0.6 });
+            const band = new THREE.Mesh(bandGeo, bandMat);
+            band.rotation.x = Math.PI / 2 + 0.15;
+            band.position.set(12.0, 8.0 + b * 2.0, -42.0);
+            group.add(band);
         }
+
+        // Метеоритные осколки в космосе (напоминание об аварии)
+        for (let r = 0; r < 12; r++) {
+            const rockGeo = new THREE.DodecahedronGeometry(0.4 + Math.random() * 0.6);
+            const rock = new THREE.Mesh(rockGeo, this.materials.meteoriteFragment);
+            rock.position.set(-8.0 + Math.random() * 20.0, 1.0 + Math.random() * 8.0, -22.0 - Math.random() * 15.0);
+            rock.rotation.set(Math.random() * 3, Math.random() * 3, 0);
+            group.add(rock);
+        }
+
+        // Тактический стол капитана
+        const tableGeo = new THREE.CylinderGeometry(1.6, 1.8, 0.9, 16);
+        const table = new THREE.Mesh(tableGeo, this.materials.bulkheadWall);
+        table.position.set(0, 0.45, 3.5);
+        table.receiveShadow = true;
+        group.add(table);
+
+        const holoscreenGeo = new THREE.PlaneGeometry(1.6, 1.0);
+        const holoscreen = new THREE.Mesh(holoscreenGeo, this.materials.neonCyan);
+        holoscreen.position.set(0, 1.25, 3.5);
+        holoscreen.rotation.x = -Math.PI / 6;
+        group.add(holoscreen);
+
+        // Терминал расследования аварии
+        const termGeo = new THREE.BoxGeometry(2.0, 1.2, 0.8);
+        const term = new THREE.Mesh(termGeo, this.materials.bulkheadWall);
+        term.position.set(-6.5, 0.6, 0);
+        term.rotation.y = Math.PI / 2;
+        group.add(term);
+
+        const termScreenGeo = new THREE.PlaneGeometry(1.6, 0.7);
+        const termScreen = new THREE.Mesh(termScreenGeo, this.materials.neonAmber);
+        termScreen.position.set(-6.05, 1.1, 0);
+        termScreen.rotation.y = -Math.PI / 2;
+        group.add(termScreen);
     }
 
     /**
-     * Постройка энергетического отсека с термоядерным реактором
+     * Энергетический отсек: реактор, засорённый фильтр охлаждения, резервная батарея
      */
     _buildReactorModule(group) {
-        // Защитная база реактора
-        const reactorBaseGeo = new THREE.CylinderGeometry(4.0, 4.5, 1.2, 24);
+        // База реактора
+        const reactorBaseGeo = new THREE.CylinderGeometry(4.0, 4.6, 1.2, 24);
         const reactorBase = new THREE.Mesh(reactorBaseGeo, this.materials.hullDark);
         reactorBase.position.set(0, 0.6, 0);
         group.add(reactorBase);
@@ -373,28 +405,56 @@ export class ChunkCacheManager {
 
         // Магнитные кольца удержания плазмы
         for (let y = 1.6; y <= 3.4; y += 0.9) {
-            const ringGeo = new THREE.TorusGeometry(2.5, 0.12, 16, 32);
+            const ringGeo = new THREE.TorusGeometry(2.5, 0.14, 16, 32);
             const ring = new THREE.Mesh(ringGeo, this.materials.energyConduit);
             ring.rotation.x = Math.PI / 2;
             ring.position.set(0, y, 0);
             group.add(ring);
         }
 
-        // Высоковольтные шины питания к стенам отсека
-        const pipeGeo = new THREE.CylinderGeometry(0.2, 0.2, 8.0, 12);
-        const pipe1 = new THREE.Mesh(pipeGeo, this.materials.hazardStripe);
-        pipe1.rotation.z = Math.PI / 2;
-        pipe1.position.set(4.0, 1.8, 0);
-        group.add(pipe1);
+        // ЗАСОРЁННЫЙ ФИЛЬТР КОНТУРА ОХЛАЖДЕНИЯ (Ключевая улика)
+        const filterBoxGeo = new THREE.BoxGeometry(1.6, 1.4, 1.2);
+        const filterBox = new THREE.Mesh(filterBoxGeo, this.materials.hazardStripe);
+        filterBox.position.set(6.0, 0.7, -4.0);
+        filterBox.castShadow = true;
+        group.add(filterBox);
 
-        const pipe2 = new THREE.Mesh(pipeGeo, this.materials.hazardStripe);
-        pipe2.rotation.x = Math.PI / 2;
-        pipe2.position.set(0, 1.8, 4.0);
-        group.add(pipe2);
+        // Трубы охлаждения к реактору
+        const pipeGeo = new THREE.CylinderGeometry(0.18, 0.18, 6.5, 12);
+        const pipe = new THREE.Mesh(pipeGeo, this.materials.bulkheadWall);
+        pipe.rotation.z = Math.PI / 2;
+        pipe.position.set(3.0, 1.0, -4.0);
+        group.add(pipe);
+
+        // Металлический фрагмент метеорита внутри смотрового окошка фильтра
+        const shrapnelGeo = new THREE.DodecahedronGeometry(0.35);
+        const shrapnel = new THREE.Mesh(shrapnelGeo, this.materials.meteoriteFragment);
+        shrapnel.position.set(6.0, 1.2, -3.3);
+        group.add(shrapnel);
+
+        // РЕЗЕРВНАЯ БАТАРЕЯ СТАНЦИИ (Emergency Battery Unit B=1)
+        const battGeo = new THREE.BoxGeometry(2.2, 2.0, 1.2);
+        const batt = new THREE.Mesh(battGeo, this.materials.bulkheadWall);
+        batt.position.set(-6.0, 1.0, -4.0);
+        group.add(batt);
+
+        // Светящиеся энергоячейки батареи
+        for (let c = -0.6; c <= 0.6; c += 0.6) {
+            const cellGeo = new THREE.CylinderGeometry(0.2, 0.2, 1.6, 12);
+            const cell = new THREE.Mesh(cellGeo, this.materials.batteryCell);
+            cell.position.set(-6.0 + c, 1.0, -3.35);
+            group.add(cell);
+        }
+
+        // Консоль инженера Марка Вэнса
+        const engDeskGeo = new THREE.BoxGeometry(2.0, 1.0, 0.8);
+        const engDesk = new THREE.Mesh(engDeskGeo, this.materials.bulkheadWall);
+        engDesk.position.set(7.0, 0.5, 3.0);
+        group.add(engDesk);
     }
 
     /**
-     * Постройка гидропонной оранжереи (биосферы)
+     * Гидропонная оранжерея: культуры Chlorella vulgaris, 430 нм фитолампы, биопробы
      */
     _buildGreenhouseModule(group) {
         // Вертикальные гидропонные фермы (стеллажи)
@@ -405,22 +465,22 @@ export class ChunkCacheManager {
             rack.castShadow = true;
             group.add(rack);
 
-            // Зеленые лотки с водорослями и культурами
+            // Зеленые лотки с водорослями
             for (let y = 0.8; y <= 3.2; y += 0.8) {
                 const plantGeo = new THREE.BoxGeometry(1.0, 0.3, 6.6);
                 const plants = new THREE.Mesh(plantGeo, this.materials.hydroGreen);
                 plants.position.set(x, y, 0);
                 group.add(plants);
 
-                // Фитолампы спектра 430–660 нм над лотками
-                const lampGeo = new THREE.BoxGeometry(0.8, 0.05, 6.4);
-                const lamp = new THREE.Mesh(lampGeo, this.materials.neonCyan);
+                // ФИТОЛАМПЫ СПЕКТРА 430 нм (Фитофотоника)
+                const lampGeo = new THREE.BoxGeometry(0.8, 0.06, 6.4);
+                const lamp = new THREE.Mesh(lampGeo, this.materials.growLight430nm);
                 lamp.position.set(x, y + 0.35, 0);
                 group.add(lamp);
             }
         }
 
-        // Центральный стеклянный резервуар с хлореллой (оксигенатор)
+        // Центральный стеклянный оксигенатор с Chlorella vulgaris
         const tankGeo = new THREE.CylinderGeometry(1.4, 1.4, 3.2, 20);
         const tank = new THREE.Mesh(tankGeo, this.materials.hydroGlass);
         tank.position.set(0, 1.6, 0);
@@ -430,13 +490,56 @@ export class ChunkCacheManager {
         const innerLiquid = new THREE.Mesh(innerLiquidGeo, this.materials.hydroGreen);
         innerLiquid.position.set(0, 1.6, 0);
         group.add(innerLiquid);
+
+        // Лабораторный столик биопроб Д-ра Елены Ростовой
+        const labDeskGeo = new THREE.BoxGeometry(1.8, 1.0, 0.9);
+        const labDesk = new THREE.Mesh(labDeskGeo, this.materials.bulkheadWall);
+        labDesk.position.set(0, 0.5, 6.0);
+        group.add(labDesk);
+
+        const sampleScreenGeo = new THREE.PlaneGeometry(1.2, 0.6);
+        const sampleScreen = new THREE.Mesh(sampleScreenGeo, this.materials.neonCyan);
+        sampleScreen.position.set(0, 1.2, 6.0);
+        group.add(sampleScreen);
     }
 
     /**
-     * Постройка жилого сектора с криокапсулами гибернации (спавн)
+     * Архивный сектор серверов АСТРЫ: поврежденные блоки памяти, терминал данных
+     */
+    _buildArchiveModule(group) {
+        // Стойки серверов по периметру
+        for (let i = -1; i <= 1; i += 2) {
+            const rackGeo = new THREE.BoxGeometry(1.4, 3.8, 5.0);
+            const rack = new THREE.Mesh(rackGeo, this.materials.bulkheadWall);
+            rack.position.set(i * 5.0, 1.9, 0);
+            group.add(rack);
+
+            // Мигающие оптические индикаторы
+            for (let y = 0.8; y <= 3.4; y += 0.6) {
+                const ledGeo = new THREE.BoxGeometry(0.1, 0.15, 4.2);
+                const ledMat = (y > 2.0 && i > 0) ? this.materials.neonAmber : this.materials.neonCyan;
+                const led = new THREE.Mesh(ledGeo, ledMat);
+                led.position.set(i * 4.25, y, 0);
+                group.add(led);
+            }
+        }
+
+        // Центральный терминал восстановления архива
+        const termGeo = new THREE.CylinderGeometry(1.2, 1.5, 1.0, 16);
+        const term = new THREE.Mesh(termGeo, this.materials.hullDark);
+        term.position.set(0, 0.5, 0);
+        group.add(term);
+
+        const screenGeo = new THREE.CylinderGeometry(1.1, 1.1, 0.6, 16, 1, true, 0, Math.PI);
+        const screen = new THREE.Mesh(screenGeo, this.materials.neonAmber);
+        screen.position.set(0, 1.2, 0);
+        group.add(screen);
+    }
+
+    /**
+     * Жилой сектор с криокапсулами пробуждения
      */
     _buildCryoBayModule(group) {
-        // Ряд криокапсул экипажа
         for (let i = -1; i <= 1; i++) {
             const podBaseGeo = new THREE.BoxGeometry(1.6, 0.8, 2.6);
             const podBase = new THREE.Mesh(podBaseGeo, this.materials.bulkheadWall);
@@ -444,29 +547,21 @@ export class ChunkCacheManager {
             podBase.castShadow = true;
             group.add(podBase);
 
-            // Стеклянная крышка криокапсулы
             const glassGeo = new THREE.CylinderGeometry(0.7, 0.7, 2.4, 12, 1, false, 0, Math.PI);
             const glass = new THREE.Mesh(glassGeo, this.materials.cryoGlass);
             glass.rotation.z = Math.PI / 2;
             glass.position.set(i * 3.5, 0.8, -3.0);
             group.add(glass);
 
-            // Монитор жизненных показателей
             const vitalsGeo = new THREE.PlaneGeometry(0.8, 0.4);
             const vitals = new THREE.Mesh(vitalsGeo, this.materials.neonCyan);
             vitals.position.set(i * 3.5, 1.5, -4.2);
             group.add(vitals);
         }
-
-        // Аварийный шлюз выхода из отсека
-        const doorGeo = new THREE.BoxGeometry(2.4, 3.2, 0.2);
-        const door = new THREE.Mesh(doorGeo, this.materials.hazardStripe);
-        door.position.set(0, 1.6, 8.0);
-        group.add(door);
     }
 
     /**
-     * Постройка стыковочного шлюза
+     * Стыковочный шлюз и Аварийный спасательный модуль
      */
     _buildAirlockModule(group) {
         // Герметичное стыковочное кольцо
@@ -475,55 +570,26 @@ export class ChunkCacheManager {
         ring.position.set(0, 3.0, -8.0);
         group.add(ring);
 
-        // Контейнеры с припасами и скафандрами
-        for (let side = -1; side <= 1; side += 2) {
-            const crateGeo = new THREE.BoxGeometry(1.8, 1.8, 1.8);
-            const crate = new THREE.Mesh(crateGeo, this.materials.bulkheadWall);
-            crate.position.set(side * 5.0, 0.9, 0);
-            crate.castShadow = true;
-            group.add(crate);
-        }
+        // АВАРИЙНЫЙ СПАСАТЕЛЬНЫЙ МОДУЛЬ (План частичной победы)
+        const podHullGeo = new THREE.ConeGeometry(2.2, 5.0, 16);
+        const podHull = new THREE.Mesh(podHullGeo, this.materials.bulkheadWall);
+        podHull.rotation.x = -Math.PI / 2;
+        podHull.position.set(0, 3.0, -11.0);
+        group.add(podHull);
+
+        const podGlassGeo = new THREE.SphereGeometry(1.0, 16, 16, 0, Math.PI);
+        const podGlass = new THREE.Mesh(podGlassGeo, this.materials.cryoGlass);
+        podGlass.position.set(0, 3.5, -10.0);
+        group.add(podGlass);
     }
 
-    /**
-     * Постройка сервисного коридора / переборки
-     */
     _buildCorridorModule(group, cx, cz) {
-        // Опорные арки переборок
-        const archGeo = new THREE.BoxGeometry(this.chunkSize - 2, 0.5, 0.8);
-        const arch = new THREE.Mesh(archGeo, this.materials.bulkheadWall);
-        arch.position.set(0, 4.2, 0);
-        group.add(arch);
-
-        // Трубопровод под потолком
-        const ductGeo = new THREE.CylinderGeometry(0.3, 0.3, this.chunkSize, 12);
-        const duct = new THREE.Mesh(ductGeo, this.materials.hullDark);
-        duct.rotation.x = Math.PI / 2;
-        duct.position.set(3.5, 4.0, 0);
-        group.add(duct);
-
-        // Иллюминатор в открытый космос со звездным светом
-        const windowFrameGeo = new THREE.RingGeometry(1.6, 2.0, 24);
-        const windowFrame = new THREE.Mesh(windowFrameGeo, this.materials.hazardStripe);
-        windowFrame.position.set(0, 2.5, this.chunkSize / 2 - 0.2);
-        group.add(windowFrame);
-
-        const glassGeo = new THREE.CircleGeometry(1.6, 24);
-        const glass = new THREE.Mesh(glassGeo, this.materials.cryoGlass);
-        glass.position.set(0, 2.5, this.chunkSize / 2 - 0.19);
-        group.add(glass);
-    }
-
-    getMetrics() {
-        const percent = this.W > 0 ? (this.C / this.W) * 100 : 0;
-        return {
-            W: this.W,
-            C: this.C,
-            percent: parseFloat(percent.toFixed(2)),
-            loadedChunksCount: this.activeChunks.size,
-            maxAllowedLimitBytes: this.maxLimitC,
-            budgetLimitBytes: this.budgetC,
-            currentChunkCoord: this.currentChunkCoord
-        };
+        // Световые неоновые полосы на стенах
+        for (const side of [-1, 1]) {
+            const stripGeo = new THREE.BoxGeometry(0.1, 0.15, this.chunkSize);
+            const strip = new THREE.Mesh(stripGeo, this.materials.energyConduit);
+            strip.position.set(side * 9.8, 2.5, 0);
+            group.add(strip);
+        }
     }
 }
