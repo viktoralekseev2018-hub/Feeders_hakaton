@@ -1,4 +1,4 @@
-package server_test
+﻿package server_test
 
 import (
 	"bytes"
@@ -45,7 +45,7 @@ func newHost(t *testing.T, dir string, ttl time.Duration) *host {
 		t.Fatal(err)
 	}
 	h := realtime.New(a, log)
-	game.New(repo, nil, log).Register(h)
+	game.New(repo, nil, nil, log).Register(h)
 	s := httptest.NewServer(server.New(web.Files, a, h))
 	jar, _ := cookiejar.New(nil)
 	t.Cleanup(func() {

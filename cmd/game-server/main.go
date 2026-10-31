@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"feeders/internal/agents"
 	"feeders/internal/auth"
 	"feeders/internal/config"
 	"feeders/internal/game"
@@ -56,7 +57,11 @@ func run(log *slog.Logger) error {
 	persistence.Start(ctx)
 	defer persistence.Stop()
 
-	gameModule := game.New(repo, serverLoop, log)
+	// Этап 4 (Разработчик 2): AI Orchestrator с очередью запросов,
+	// локальным клиентом Ollama и базой знаний первоисточников
+	aiOrchestrator := agents.NewOrchestrator("", "", log)
+
+	gameModule := game.New(repo, serverLoop, aiOrchestrator, log)
 	gameModule.Register(hub)
 
 	httpServer := &http.Server{
@@ -76,7 +81,7 @@ func run(log *slog.Logger) error {
 
 	errs := make(chan error, 1)
 	go func() { errs <- httpServer.Serve(listener) }()
-	log.Info("host ready", "address", listener.Addr(), "data_dir", cfg.DataDir, "protocol_version", 1, "world_enabled", true, "simulation_hz", 20)
+	log.Info("host ready", "address", listener.Addr(), "data_dir", cfg.DataDir, "protocol_version", 1, "world_enabled", true, "simulation_hz", 20, "ai_enabled", true)
 
 	select {
 	case <-ctx.Done():
