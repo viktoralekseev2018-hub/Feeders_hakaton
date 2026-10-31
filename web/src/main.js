@@ -409,6 +409,11 @@ class LastCrewApp {
             }
         }
 
+        // Обновление динамической графики отсеков (плазма, вращение Юпитера, искры, пузырьки)
+        if (this.chunkManager && this.chunkManager.updateAnimation) {
+            this.chunkManager.updateAnimation(time);
+        }
+
         // Обновление панели аудита для жюри
         if (this.auditPanel) {
             this.auditPanel.update();
