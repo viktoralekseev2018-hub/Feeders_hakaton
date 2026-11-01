@@ -91,16 +91,7 @@ func (pm *PersistenceManager) saveDirtyPlayers(ctx context.Context) {
 		return
 	}
 
-	dirty := pm.loop.GetDirtyPlayers()
-	if len(dirty) == 0 {
-		return
-	}
-
-	for _, state := range dirty {
-		if err := pm.repo.SavePlayer(ctx, state); err != nil {
-			pm.log.Error("failed to auto-save player state", "player_id", state.PlayerID, "error", err)
-		}
-	}
+	pm.loop.Persist(ctx)
 }
 
 // Flush принудительно сохраняет актуальное состояние всех активных игроков на диск.
@@ -109,13 +100,7 @@ func (pm *PersistenceManager) Flush(ctx context.Context) {
 		return
 	}
 
-	all := pm.loop.GetAllPlayersStates()
-	for _, state := range all {
-		if err := pm.repo.SavePlayer(ctx, state); err != nil {
-			pm.log.Error("failed to flush player state", "player_id", state.PlayerID, "error", err)
-		}
-	}
-	pm.log.Info("player states flushed to storage", "count", len(all))
+	pm.loop.Persist(ctx)
 }
 
 // SpawnPlayer загружает сохраненное состояние игрока либо инициализирует точку спавна в криокапсуле станции.

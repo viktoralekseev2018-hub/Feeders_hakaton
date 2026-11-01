@@ -1,597 +1,131 @@
-import * as THREE from 'three';
-import { PlayerControls } from './controls/PlayerControls.js';
-import { NetworkManager } from './net/NetworkManager.js';
-import { AuthModal } from './ui/AuthModal.js';
-import { ChunkCacheManager } from './world/ChunkCacheManager.js';
-import { RemotePlayerManager } from './render/RemotePlayerManager.js';
-import { DebugAuditPanel } from './ui/DebugAuditPanel.js';
-import { CrewManager } from './crew/CrewManager.js';
-import { DialogueModal } from './ui/DialogueModal.js';
-import { SurvivalConsole } from './ui/SurvivalConsole.js';
-import { PassportModal } from './ui/PassportModal.js';
-import { HistoryQuestModal } from './ui/HistoryQuestModal.js';
-import { LightClockComponent } from './experiment/LightClockComponent.js';
-
-/**
- * main.js
- * Точка входа Three.js клиентского приложения научно-образовательной платформы «Последний экипаж».
- * 
- * Включает полную реализацию этапов 5, 6, 7, 8 и графического обновления:
- * - Раздельные тематические комнаты: Капитанский мостик, Камбуз/Кухня, Комната отдыха с ТВ и диваном,
- *   Физическая лаборатория СТО, Павильон Истории Геродота, Реактор, Оранжерея, Шлюз.
- * - Центральный Raycaster для прицельного взаимодействия с объектами станции по [E].
- * - Горячие клавиши: [E] Взаимодействие/Диалог, [P] Паспорт исследователя, [C] Пульт операций, [I] Улики.
- * - Интерактивные модальные окна: Световые часы (СТО), Квест Геродота, Паспорт исследователя.
- * - Панель арбитража жюри с контролем кэша (C <= 10% W) и 5-минутным сценарием.
- */
-class LastCrewApp {
-    constructor() {
-        this.canvas = document.getElementById('webgl-canvas');
-        this.clock = new THREE.Clock();
-
-        this.network = new NetworkManager();
-        this.isAuthenticated = false;
-        this.currentUser = null;
-
-        this.lastInputSendTime = 0;
-        this.inputSequence = 1;
-
-        // Цели взаимодействия
-        this.activeInteractionTarget = null; // NPC рядом
-        this.activeHoverObject = null;       // Физический объект в перекрестье прицела
-
-        // Центральный луч прицела для raycasting
-        this.raycaster = new THREE.Raycaster();
-        this.raycaster.far = 6.5; // Дистанция взаимодействия 6.5 метров
-        this.screenCenter = new THREE.Vector2(0, 0);
-
-        this._initThree();
-        this._initSpaceEnvironment();
-        this._initWorldAndCache();
-        this._initCrew();
-        this._initRemotePlayers();
-        this._initControls();
-        this._initUI();
-        this._initNetworkListeners();
-
-        this._animate();
-    }
-
-    _initThree() {
-        this.renderer = new THREE.WebGLRenderer({
-            canvas: this.canvas,
-            antialias: true,
-            powerPreference: 'high-performance'
-        });
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 1.1;
-        this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
-        this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x050811);
-        this.scene.fog = new THREE.FogExp2(0x050811, 0.012);
-
-        this.camera = new THREE.PerspectiveCamera(
-            75,
-            window.innerWidth / window.innerHeight,
-            0.1,
-            600
-        );
-        // Стартовая позиция в каютах отдыха [-20, 1.7, 20]
-        this.camera.position.set(-20, 1.7, 20);
-
-        window.addEventListener('resize', () => this._onWindowResize());
-    }
-
-    _initSpaceEnvironment() {
-        const ambientLight = new THREE.AmbientLight(0x1e293b, 0.7);
-        this.scene.add(ambientLight);
-
-        const starLight = new THREE.DirectionalLight(0xe0f2fe, 1.2);
-        starLight.position.set(30, 50, 40);
-        starLight.castShadow = true;
-        starLight.shadow.mapSize.width = 1024;
-        starLight.shadow.mapSize.height = 1024;
-        this.scene.add(starLight);
-
-        // Звездное небо
-        const starsGeo = new THREE.BufferGeometry();
-        const starsCount = 1800;
-        const positions = new Float32Array(starsCount * 3);
-
-        for (let i = 0; i < starsCount * 3; i += 3) {
-            positions[i] = (Math.random() - 0.5) * 600;
-            positions[i + 1] = Math.random() * 300 + 10;
-            positions[i + 2] = (Math.random() - 0.5) * 600;
-        }
-
-        starsGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        const starsMat = new THREE.PointsMaterial({
-            color: 0xffffff,
-            size: 1.2,
-            transparent: true,
-            opacity: 0.85
-        });
-
-        const starField = new THREE.Points(starsGeo, starsMat);
-        this.scene.add(starField);
-    }
-
-    _initWorldAndCache() {
-        this.chunkManager = new ChunkCacheManager(this.scene);
-        this.chunkManager.updatePlayerPosition(this.camera.position);
-    }
-
-    _initCrew() {
-        this.crewManager = new CrewManager(this.scene);
-    }
-
-    _initRemotePlayers() {
-        this.remotePlayerManager = new RemotePlayerManager(this.scene);
-    }
-
-    _initControls() {
-        this.controls = new PlayerControls(this.camera, document.body);
-
-        this.canvas.addEventListener('click', () => {
-            if (this.isAuthenticated && !this._isAnyModalOpen()) {
-                this.controls.lock();
-            }
-        });
-
-        window.addEventListener('keydown', (e) => {
-            if (!this.isAuthenticated) return;
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-
-            if (e.code === 'KeyE') {
-                if (this.activeInteractionTarget && !this.dialogueModal?.isOpen) {
-                    this.controls.unlock();
-                    this.dialogueModal.open(this.activeInteractionTarget);
-                } else if (this.activeHoverObject) {
-                    this._handleObjectInteraction(this.activeHoverObject);
-                }
-            } else if (e.code === 'KeyP') {
-                if (this.passportModal) {
-                    this.controls.unlock();
-                    if (this.passportModal.isOpen) {
-                        this.passportModal.close();
-                    } else {
-                        this.passportModal.open();
-                    }
-                }
-            } else if (e.code === 'KeyC') {
-                if (this.survivalConsole && !this._isAnyModalOpen()) {
-                    this.controls.unlock();
-                    if (this.survivalConsole.isActionModalOpen) {
-                        this.survivalConsole.closeModals();
-                    } else {
-                        this.survivalConsole.openActionModal();
-                    }
-                }
-            } else if (e.code === 'KeyI') {
-                if (this.survivalConsole && !this._isAnyModalOpen()) {
-                    this.controls.unlock();
-                    if (this.survivalConsole.isInvestigationModalOpen) {
-                        this.survivalConsole.closeModals();
-                    } else {
-                        this.survivalConsole.openInvestigationModal();
-                    }
-                }
-            }
-        });
-    }
-
-    _initUI() {
-        this.authModal = new AuthModal(this.network, (user) => {
-            this._onAuthSuccess(user);
-        });
-
-        this.survivalConsole = new SurvivalConsole(this.network, () => this._onModalClosed());
-        this.dialogueModal = new DialogueModal(this.network, () => this._onModalClosed());
-        this.passportModal = new PassportModal(this.network, () => this._onModalClosed());
-        this.historyQuestModal = new HistoryQuestModal(this.network, () => this._onModalClosed());
-        this.lightClockComponent = new LightClockComponent(this.network, () => this._onModalClosed());
-
-        // Элементы HUD
-        this.hudUsername = document.getElementById('hud-username');
-        this.hudCoords = document.getElementById('hud-coords');
-        this.lanStatusDot = document.getElementById('lan-status-dot');
-        this.lanStatusText = document.getElementById('lan-status-text');
-        this.controlsHint = document.getElementById('controls-hint');
-        this.playerInfoPill = document.getElementById('player-info-pill');
-        this.posInfoPill = document.getElementById('pos-info-pill');
-        this.interactionPill = document.getElementById('interaction-pill');
-        this.interactionLabel = document.getElementById('interaction-label');
-        this.awakeningOverlay = document.getElementById('awakening-overlay');
-
-        // Кнопка паспорта в левом верхнем углу
-        const passportHudBtn = document.getElementById('passport-hud-btn');
-        if (passportHudBtn) {
-            passportHudBtn.style.display = 'inline-flex';
-            passportHudBtn.addEventListener('click', () => {
-                this.controls.unlock();
-                this.passportModal.open();
-            });
-        }
-
-        // Баннер авто-переподключения
-        this.connectionBanner = document.getElementById('connection-alert-banner');
-        this.reconnectStatusText = document.getElementById('reconnect-status-text');
-        this.reconnectNowBtn = document.getElementById('reconnect-now-btn');
-        if (this.reconnectNowBtn) {
-            this.reconnectNowBtn.addEventListener('click', () => {
-                this.network.reconnectNow();
-            });
-        }
-
-        // Панель аудита кэша (ТЗ <= 10%)
-        this.auditPanel = new DebugAuditPanel(this.chunkManager);
-        this.auditPanel.onTestEvictionRequested = () => {
-            this._runCacheEvictionDemo();
-        };
-        this.auditPanel.onDemoRequested = () => {
-            this._runFiveMinuteDemo();
-        };
-    }
-
-    _isAnyModalOpen() {
-        return (
-            this.dialogueModal?.isOpen ||
-            this.survivalConsole?.isActionModalOpen ||
-            this.survivalConsole?.isInvestigationModalOpen ||
-            this.passportModal?.isOpen ||
-            this.historyQuestModal?.isOpen ||
-            this.lightClockComponent?.isOpen
-        );
-    }
-
-    _onModalClosed() {
-        if (this.isAuthenticated && !this._isAnyModalOpen()) {
-            setTimeout(() => this.controls.lock(), 150);
-        }
-    }
-
-    _onAuthSuccess(user) {
-        this.isAuthenticated = true;
-        this.currentUser = user;
-
-        if (this.remotePlayerManager && user.id) {
-            this.remotePlayerManager.setLocalPlayerId(user.id);
-        }
-
-        console.log('[LastCrewApp] Успешная авторизация члена экипажа:', user.username);
-
-        if (this.hudUsername) this.hudUsername.textContent = user.username;
-        if (this.playerInfoPill) this.playerInfoPill.style.display = 'inline-flex';
-        if (this.posInfoPill) this.posInfoPill.style.display = 'inline-flex';
-        if (this.controlsHint) this.controlsHint.style.display = 'block';
-
-        this._triggerAwakeningEffect();
-        this.network.connectWebSocket();
-        setTimeout(() => this.controls.lock(), 600);
-
-        if (this.network.currentUser && this.network.currentUser.id.startsWith('local_')) {
-            this._spawnDemoRemotePlayer();
-        }
-    }
-
-    _triggerAwakeningEffect() {
-        if (!this.awakeningOverlay) return;
-        this.awakeningOverlay.classList.remove('hidden');
-        setTimeout(() => {
-            this.awakeningOverlay.classList.add('hidden');
-        }, 1600);
-    }
-
-    _initNetworkListeners() {
-        this.network.on('connect', () => {
-            if (this.lanStatusDot) this.lanStatusDot.classList.add('online');
-            if (this.lanStatusText) this.lanStatusText.textContent = 'LAN: Онлайн';
-            if (this.connectionBanner) this.connectionBanner.classList.add('hidden');
-        });
-
-        this.network.on('reconnected', () => {
-            if (this.connectionBanner) this.connectionBanner.classList.add('hidden');
-        });
-
-        this.network.on('disconnect', () => {
-            if (this.lanStatusDot) this.lanStatusDot.classList.remove('online');
-            if (this.lanStatusText) this.lanStatusText.textContent = 'LAN: Оффлайн';
-        });
-
-        this.network.on('reconnecting', (info) => {
-            if (this.connectionBanner) {
-                this.connectionBanner.classList.remove('hidden');
-                if (this.reconnectStatusText) {
-                    this.reconnectStatusText.textContent = `Попытка #${info.attempt}. Повтор через ${info.remainingSeconds} сек...`;
-                }
-            }
-        });
-
-        this.network.on('player.spawn', (spawnData) => {
-            if (spawnData.position) {
-                this.controls.setPosition(
-                    spawnData.position.x,
-                    spawnData.position.y,
-                    spawnData.position.z
-                );
-            }
-            if (typeof spawnData.yaw === 'number') {
-                this.controls.setYaw(spawnData.yaw);
-            }
-            this.chunkManager.updatePlayerPosition(this.camera.position);
-        });
-
-        this.network.on('world.snapshot', (snapshot) => {
-            if (snapshot && snapshot.players) {
-                this.remotePlayerManager.applySnapshot(snapshot.players, snapshot.server_time);
-            }
-        });
-    }
-
-    _spawnDemoRemotePlayer() {
-        const demoPlayerId = 'demo_astronaut_alex';
-        const demoUsername = 'Алекс (Инженер-стажер)';
-        let angle = 0;
-        setInterval(() => {
-            angle += 0.03;
-            const x = Math.cos(angle) * 7;
-            const z = Math.sin(angle) * 7;
-            const yaw = -angle + Math.PI / 2;
-
-            this.remotePlayerManager.applySnapshot([
-                { id: demoPlayerId, name: demoUsername, x, y: 0, z, yaw }
-            ], performance.now());
-        }, 66);
-    }
-
-    _runCacheEvictionDemo() {
-        const curPos = this.controls.getPosition();
-        curPos.z -= 25;
-        this.chunkManager.updatePlayerPosition(curPos);
-        this.auditPanel.registerEviction();
-    }
-
-    /**
-     * 5-минутный демонстрационный тур для жюри
-     */
-    _runFiveMinuteDemo() {
-        const checkpoints = [
-            { pos: { x: 0, y: 1.7, z: 0 }, desc: '1. Мостик: Капитан Волк и панорама Юпитера' },
-            { pos: { x: 0, y: 1.7, z: -20 }, desc: '2. Камбуз: Пищевой синтезатор и холодильник экипажа' },
-            { pos: { x: -20, y: 1.7, z: 20 }, desc: '3. Кают-компания: Уютный диван, ТВ с Землей и спальные места' },
-            { pos: { x: 20, y: 1.7, z: 0 }, desc: '4. Реактор: Токамак 15 МВт, плазма и инженер Марк Вэнс' },
-            { pos: { x: 0, y: 1.7, z: 20 }, desc: '5. Оранжерея: Фотобиореактор Chlorella 430 нм и биолог Елена' },
-            { pos: { x: -20, y: 1.7, z: 0 }, desc: '6. Физическая лаборатория: Световые часы СТО и Эйнштейн' },
-            { pos: { x: 20, y: 1.7, z: 20 }, desc: '7. Павильон Истории: Свитки Геродота и память АСТРЫ' }
-        ];
-
-        let index = 0;
-        const interval = setInterval(() => {
-            if (index >= checkpoints.length) {
-                clearInterval(interval);
-                this._showStationNotification('🏁 Завершение демо-тура', 'Все ключевые отсеки станции и научные задачи продемонстрированы!');
-                return;
-            }
-
-            const cp = checkpoints[index];
-            this.controls.setPosition(cp.pos.x, cp.pos.y, cp.pos.z);
-            this.chunkManager.updatePlayerPosition(cp.pos);
-            this._showStationNotification('📍 Демонстрационный маршрут', cp.desc);
-            index++;
-        }, 8000);
-    }
-
-    /**
-     * Прицельный опрос интерактивных объектов в центре экрана
-     */
-    _checkRaycastInteraction() {
-        this.raycaster.setFromCamera(this.screenCenter, this.camera);
-
-        // Собираем все интерактивные меши из активных чанков
-        const interactables = [];
-        for (const chunk of this.chunkManager.activeChunks.values()) {
-            if (chunk.meshGroup) {
-                chunk.meshGroup.traverse((child) => {
-                    if (child.isMesh && child.userData && child.userData.interactable) {
-                        interactables.push(child);
-                    }
-                });
-            }
-        }
-
-        const intersects = this.raycaster.intersectObjects(interactables, false);
-
-        if (intersects.length > 0) {
-            const hit = intersects[0].object;
-            if (this.activeHoverObject !== hit) {
-                this._clearHoverHighlight();
-                this.activeHoverObject = hit;
-                this._applyHoverHighlight(hit);
-            }
-
-            // Если рядом нет говорящего NPC, показываем подсказку предмета
-            if (!this.activeInteractionTarget && this.interactionPill && this.interactionLabel) {
-                this.interactionLabel.textContent = `[E] ${hit.userData.name || 'Использовать объект'}`;
-                this.interactionPill.classList.remove('hidden');
-            }
-        } else {
-            this._clearHoverHighlight();
-            this.activeHoverObject = null;
-            if (!this.activeInteractionTarget && this.interactionPill) {
-                this.interactionPill.classList.add('hidden');
-            }
-        }
-    }
-
-    _applyHoverHighlight(mesh) {
-        if (!mesh || !mesh.material) return;
-        this._highlightedMesh = mesh;
-        if (mesh.material.emissive) {
-            this._originalEmissive = mesh.material.emissive.clone();
-            this._originalEmissiveIntensity = mesh.material.emissiveIntensity;
-            mesh.material.emissive.set(0x38bdf8);
-            mesh.material.emissiveIntensity = 0.9;
-        }
-    }
-
-    _clearHoverHighlight() {
-        if (this._highlightedMesh && this._highlightedMesh.material) {
-            if (this._originalEmissive && this._highlightedMesh.material.emissive) {
-                this._highlightedMesh.material.emissive.copy(this._originalEmissive);
-                this._highlightedMesh.material.emissiveIntensity = this._originalEmissiveIntensity ?? 0;
-            }
-        }
-        this._highlightedMesh = null;
-        this._originalEmissive = null;
-    }
-
-    _handleObjectInteraction(obj) {
-        if (!obj || !obj.userData) return;
-
-        const type = obj.userData.type;
-
-        switch (type) {
-            case 'bridge_console':
-                this.controls.unlock();
-                this.survivalConsole.openActionModal();
-                break;
-            case 'synthesizer':
-                this._showStationNotification('🍔 Пищевой синтезатор', 'Питательный космический рацион синтезирован! Калорийность: 2400 ккал.');
-                break;
-            case 'refrigerator':
-                this._showStationNotification('❄️ Холодильник экипажа', 'Температура контура: +3.4°C. Образцы клеточных культур Chlorella в сохранности.');
-                break;
-            case 'lounge_tv':
-                this._showStationNotification('📺 ТВ Кают-компании', 'Трансляция земного архива (Озеро Байкал). Психологический индекс экипажа повышен.');
-                break;
-            case 'light_clock':
-                this.controls.unlock();
-                this.lightClockComponent.open();
-                break;
-            case 'herodotus_archive':
-                this.controls.unlock();
-                this.historyQuestModal.open();
-                break;
-            case 'reactor_bench':
-                this.controls.unlock();
-                this.survivalConsole.openInvestigationModal();
-                break;
-            case 'bioreactor':
-                this._showStationNotification('🌱 Фотобиореактор', 'Культура микроводорослей переведена на узкополосный ночной спектр 430 нм (5 МВт).');
-                break;
-            case 'escape_pod':
-                this._showStationNotification('🚀 Спасательный челнок', 'Шлюз челнока разгерметизирован. Требуется подтверждение протокола эвакуации.');
-                break;
-            case 'investigation_terminal':
-                this.controls.unlock();
-                this.survivalConsole.openInvestigationModal();
-                break;
-            default:
-                this._showStationNotification('🔧 Объект станции', obj.userData.name || 'Взаимодействие выполнено');
-        }
-    }
-
-    _showStationNotification(title, text) {
-        let notif = document.getElementById('station-global-toast');
-        if (!notif) {
-            notif = document.createElement('div');
-            notif.id = 'station-global-toast';
-            notif.style.cssText = `
-                position: fixed; top: 80px; left: 50%; transform: translateX(-50%);
-                background: rgba(15, 23, 42, 0.95); border: 2px solid #38bdf8;
-                border-radius: 8px; padding: 12px 24px; color: #f8fafc;
-                font-family: 'Inter', system-ui, sans-serif; z-index: 9999;
-                box-shadow: 0 0 25px rgba(56, 189, 248, 0.4); text-align: center;
-                pointer-events: none; transition: opacity 0.3s ease;
-            `;
-            document.body.appendChild(notif);
-        }
-
-        notif.innerHTML = `
-            <div style="font-weight: 700; font-size: 14px; color: #38bdf8; margin-bottom: 4px;">${title}</div>
-            <div style="font-size: 13px; color: #e2e8f0;">${text}</div>
-        `;
-        notif.style.opacity = '1';
-
-        if (this._notifTimeout) clearTimeout(this._notifTimeout);
-        this._notifTimeout = setTimeout(() => {
-            notif.style.opacity = '0';
-        }, 3500);
-    }
-
-    _onWindowResize() {
-        this.camera.aspect = window.innerWidth / window.innerHeight;
-        this.camera.updateProjectionMatrix();
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-    }
-
-    _animate() {
-        requestAnimationFrame(() => this._animate());
-
-        const delta = this.clock.getDelta();
-        const time = this.clock.getElapsedTime();
-
-        this.controls.update(delta);
-        this.remotePlayerManager.update();
-
-        const playerPos = this.controls.getPosition();
-        this.chunkManager.updatePlayerPosition(playerPos);
-
-        // Обновление NPC экипажа и проверка близости
-        if (this.crewManager) {
-            const nearest = this.crewManager.update(playerPos, time);
-            this.activeInteractionTarget = nearest;
-
-            if (this.interactionPill && this.interactionLabel) {
-                if (nearest && !this.dialogueModal.isOpen) {
-                    this.interactionLabel.textContent = `Поговорить: ${nearest.name} (${nearest.role})`;
-                    this.interactionPill.classList.remove('hidden');
-                } else if (!this.activeHoverObject) {
-                    this.interactionPill.classList.add('hidden');
-                }
-            }
-        }
-
-        // Прицельный Raycasting по объектам
-        if (this.isAuthenticated && !this._isAnyModalOpen()) {
-            this._checkRaycastInteraction();
-        }
-
-        if (this.chunkManager && this.chunkManager.updateAnimation) {
-            this.chunkManager.updateAnimation(time);
-        }
-
-        if (this.auditPanel) {
-            this.auditPanel.update();
-        }
-
-        // Обновление HUD координат и отправка движения на сервер
-        if (this.isAuthenticated && this.hudCoords) {
-            this.hudCoords.textContent = `X: ${playerPos.x.toFixed(1)} | Y: ${playerPos.y.toFixed(1)} | Z: ${playerPos.z.toFixed(1)}`;
-
-            const now = performance.now();
-            if (now - this.lastInputSendTime > 55) { // ~18 Гц
-                this.lastInputSendTime = now;
-                if (this.network.isConnected) {
-                    this.network.send('player.input', {
-                        seq: this.inputSequence++,
-                        x: parseFloat(playerPos.x.toFixed(2)),
-                        y: parseFloat(playerPos.y.toFixed(2)),
-                        z: parseFloat(playerPos.z.toFixed(2)),
-                        yaw: parseFloat(this.controls.getYaw().toFixed(3))
-                    });
-                }
-            }
-        }
-
-        this.renderer.render(this.scene, this.camera);
-    }
+import {AuthScreen} from './ui/AuthScreen.js';
+import {installFlightDeck} from './ui/FlightDeck.js';
+import {Laboratory} from './ui/Laboratory.js';
+import {CREW} from './crew/BridgeCrew.js';
+import {NetworkManager} from './net/NetworkManager.js';
+import {ShipScene} from './scene.js';
+import {actions,finals,clueNames} from './mission.js';
+const $=id=>document.getElementById(id);
+const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const network=new NetworkManager();
+let ship=null,user=null,state=null,room=null,selectedAgent='savinykh',chatMode='npc',pending=false,chatBusy=false,ended=false,lobbyManual=false,historyScope='',navigating=false;
+const histories=new Map();const laboratory=new Laboratory({network,room:()=>room,user:()=>user,modal,toast});
+const roleNames={captain:'Капитан',engineer:'Инженер',biologist:'Биолог',navigator:'Навигатор',commander:'Универсальная роль'};
+const roleInfo=[['captain','◈','Решения команды, все системы и финальный манёвр'],['engineer','ϟ','Реактор, охлаждение и резервное питание'],['biologist','♧','Оранжерея и система жизнеобеспечения'],['navigator','⌁','Архив корабля, навигация и расчёт курса']];
+const intro={savinykh:'Начнём с наблюдений. Обсудим план спасения или реальную историю восстановления «Салюта-7»?',dzhanibekov:'Сначала проверим охлаждение. Реактор без исправного контура способен повредить корпус. Какие показания вас интересуют?',ryazansky:'Кислород ограничен. Оранжерея поможет снизить расход, но для неё понадобится питание. Давайте оценим условия.',krikalev:'Без архива у нас только часть картины. Можем восстановить записи и рассчитать безопасный курс.'};
+function toast(text){$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').hidden=true,6500);}
+function modal(html){ship?.controls.unlock();$('dialog-content').innerHTML=html;if(!$('action-dialog').open)$('action-dialog').showModal();$('action-dialog').scrollTop=0;requestAnimationFrame(()=>{if(!$('action-dialog').open)return;const heading=$('dialog-content').querySelector('h2');if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true});}});}
+function closeModal(){$('action-dialog').close();}
+$('dialog-close').onclick=closeModal;
+$('action-dialog').addEventListener('click',e=>{if(e.target===$('action-dialog')){const r=e.target.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)closeModal();}});
+const auth = new AuthScreen(network, showApp);
+function updateAuth(){auth.render();}
+function showApp(u){user=u;$('auth-screen').hidden=true;$('application').hidden=false;$('user-name').textContent=u.username;$('user-avatar').textContent=u.username.slice(0,2).toUpperCase();if(!ship){try{ship=new ShipScene($('viewport'));}catch(e){console.error(e);$('scene-fallback').hidden=false;$('explore-view').disabled=true;}}flightDeck?.apply();if(innerWidth<1100)$('comms-panel').hidden=true;$('lobby-screen').hidden=false;requestAnimationFrame(()=>ship?.resize());}
+function showAuth(){ship?.setActive(false);$('auth-screen').hidden=false;$('application').hidden=true;$('lobby-screen').hidden=true;user=null;room=null;state=null;histories.clear();historyScope='';ended=false;chatBusy=false;pending=false;closeModal();updateAuth();}
+async function logout(){try{await network.logout();}catch(e){toast(e.message);}showAuth();}
+$('logout').onclick=logout;$('lobby-back').onclick=logout;
+network.on('expired',()=>{showAuth();$('auth-error').textContent='Сессия истекла. Войдите снова.';});
+network.on('notice',toast);
+network.on('latency',ms=>$('latency').textContent=ms+' мс');
+network.on('status',status=>{const online=status==='online';document.body.classList.toggle('network-offline',!online);$('connection').classList.toggle('offline',!online);$('connection').innerHTML='<i class="dot"></i>'+({online:'На связи · LAN',connecting:'Подключение…',offline:'Нет связи'}[status]||status);$('network-cover').hidden=online;ship?.setActive(online&&!!room?.started&&$('lobby-screen').hidden);if(!online)ship?.controls.unlock();});
+network.on('player.ready',data=>{user=data.user;ship?.spawn(data.state);network.request('room.get').catch(toast);});
+network.on('room.state',value=>{const previous=room?.code;room=value.code?value:null;if(room){const scope=room.code+':'+room.generation;if(historyScope!==scope){historyScope=scope;histories.clear();ended=false;state=null;chatBusy=false;closeModal();selectAgent(selectedAgent);if(innerWidth<1100)$('comms-panel').hidden=true;} $('room-code').textContent=room.code;$('team-count').textContent=(room.members||[]).filter(p=>p.online).length;const me=room.members?.find(p=>p.id===user?.id);const showLobby=!room.started||!me?.role||lobbyManual;$('lobby-screen').hidden=!showLobby;if(showLobby){ship?.setActive(false);renderLobby();}else{ship?.setActive(network.ready);if(previous!==room.code)ship?.resetOverview();}renderChat();renderDecision();laboratory.refresh();}else{$('lobby-screen').hidden=false;ship?.setActive(false);renderLobby();} });
+network.on('player.position',p=>ship?.spawn(p));
+network.on('game.state',value=>{state=value;renderState();});
+network.on('world.snapshot',snap=>{ship?.snapshots(snap.players||[],user?.id);const count=(snap.players||[]).length;if($('crew-count').dataset.count!==String(count)){$('crew-count').dataset.count=String(count);$('crew-count').innerHTML='<i class="dot"></i> '+count+' '+(count===1?'участник':'участника')+' на борту';}});
+$('retry').onclick=()=>network.reconnectNow();
+setInterval(()=>{if(ship&&!navigating&&network.ready&&room?.started&&$('lobby-screen').hidden)network.movement(ship.player,ship.yaw);},65);
+setInterval(()=>{if(ship&&room?.started&&network.ready)ship.streamWorld?.update(ship.player);},250);
+async function command(type,payload={}){try{const result=await network.request(type,payload);$('lobby-error').textContent='';return result;}catch(e){$('lobby-error').textContent=e.message;toast(e.message);throw e;}}
+function renderLobby(){const root=$('lobby-content');root.replaceChildren();$('lobby-error').textContent='';$('step-room').className=room?'complete':'current';$('step-role').className=room?'current':'';$('step-start').className=room?.started?'complete':'';if(!room){$('lobby-title').innerHTML='Соберите свой экипаж<span class="accent">_</span>';$('lobby-lead').textContent='Создайте комнату или присоединитесь к друзьям по коду.';root.innerHTML='<div class="room-forms"><form id="create-room" class="lobby-card"><div class="card-index"><span>01 / HOST EXPEDITION</span><b>⌑</b></div><h2>Новая экспедиция</h2><p>Ваш корабль. Ваш экипаж. Друзья подключатся по коду.</p><label for="room-name">НАЗВАНИЕ ЭКСПЕДИЦИИ</label><input id="room-name" maxlength="60" placeholder="Экспедиция «Горизонт-7»"><button class="primary">Создать комнату <span>↗</span></button><p class="room-form-meta">1–4 участника · отдельная сохранённая партия</p></form><form id="join-room" class="lobby-card"><div class="card-index"><span>02 / JOIN THE CREW</span><b>↗</b></div><h2>Присоединиться к экипажу</h2><p>Подключитесь к серверу друзей и введите код их комнаты.</p><label for="join-code">КОД КОМНАТЫ</label><input id="join-code" minlength="6" maxlength="6" required placeholder="НАПРИМЕР, A7C21F" autocomplete="off" style="text-transform:uppercase"><button class="secondary">Присоединиться <span>↗</span></button><p class="room-form-meta">Код из 6 символов выдаёт создатель комнаты</p></form></div><div class="lobby-briefing"><div><b>08</b><span><strong>Циклов до развязки</strong><p>Обсуждение и исследование не расходуют время.</p></span></div><div><b>04</b><span><strong>Наставника на борту</strong><p>У каждого своя специальность и локальные источники.</p></span></div><div><b>01</b><span><strong>Общее решение</strong><p>Ресурсы, действия и последствия видит вся команда.</p></span></div></div><p class="lobby-note">Все ноутбуки должны находиться в одной локальной сети. На клиентских устройствах нужен только браузер.</p>';
+const joinParam=new URLSearchParams(location.search).get('room');if(joinParam)$('join-code').value=joinParam;
+$('create-room').onsubmit=async e=>{e.preventDefault();const b=e.submitter;b.disabled=true;try{await command('room.create',{name:$('room-name').value});}catch{}finally{b.disabled=false;}};
+$('join-room').onsubmit=async e=>{e.preventDefault();const code=$('join-code').value.trim().toUpperCase();if(!/^[A-F0-9]{6}$/.test(code)){$('lobby-error').textContent='Введите 6 символов кода: цифры и буквы A–F.';$('join-code').focus();return;}const b=e.submitter;b.disabled=true;try{await command('room.join',{code});}catch{}finally{b.disabled=false;}};return;}
+const me=room.members.find(p=>p.id===user.id);$('lobby-title').textContent=room.started?'Ваша экспедиция продолжается':'Выберите свою роль';$('lobby-lead').textContent=room.started?'Партия и решения сохранены. Можно вернуться на корабль.':'У каждого своя специальность. Результат всегда общий.';
+root.innerHTML='<div class="room-heading"><div><h2>'+escape(room.name)+'</h2><p>'+room.members.length+' из 4 участников · '+(room.started?'миссия идёт':'ожидаем готовности')+'</p></div><button class="room-key" id="copy-code" title="Скопировать код">'+escape(room.code)+'</button></div><div class="roles">'+roleInfo.map(([id,icon,desc],index)=>{const owner=room.members.find(p=>p.role===id);const station={captain:'02 / МОСТИК',engineer:'03 / РЕАКТОР',biologist:'04 / ОРАНЖЕРЕЯ',navigator:'02 / НАВИГАЦИЯ'}[id];return '<button aria-pressed="'+(me?.role===id)+'" class="role-card '+(me?.role===id?'selected ':'')+(owner&&owner.id!==user.id?'occupied':'')+'" data-role="'+id+'" '+(room.started&&!!me?.role||owner&&owner.id!==user.id?'disabled':'')+'><span class="role-number">0'+(index+1)+'</span><span class="role-icon">'+icon+'</span><strong>'+roleNames[id]+'</strong><span class="role-station">'+station+'</span><p>'+escape(desc)+'</p><span class="role-state"><span>'+escape(owner?'Назначен: '+owner.name:'Свободная роль')+'</span><span>'+(me?.role===id?'✓':owner?'Занято':'↗')+'</span></span></button>';}).join('')+'</div><div class="solo-role">Для самостоятельной игры: <button id="solo-role" '+(room.started&&!!me?.role||room.members.some(p=>p.role==='commander'&&p.id!==user.id)?'disabled':'')+'>'+(me?.role==='commander'?'✓ Универсальная роль выбрана':'Управлять всеми системами')+'</button></div><div class="lobby-bottom"><div class="lobby-members">'+room.members.map(p=>'<div class="lobby-member"><span class="avatar">'+escape(p.name.slice(0,2).toUpperCase())+'</span><div>'+escape(p.name)+(p.id===user.id?' · вы':'')+'<small>'+escape(p.role?roleNames[p.role]:'Роль не выбрана')+' / '+(p.ready?'готов':p.online?'на связи':'не в сети')+'</small></div></div>').join('')+'</div><div class="lobby-actions">'+(room.started?'<button id="resume-room" class="primary">Вернуться на корабль ↗</button>':'<button id="ready-room" class="secondary" '+(!me?.role?'disabled':'')+'>'+(me?.ready?'Отменить готовность':'Я готов')+'</button>'+(room.owner===user.id?'<button id="start-room" class="primary" '+(!room.members.every(p=>p.ready)?'disabled':'')+'>Начать миссию ↗</button>':''))+'</div></div><p class="lobby-note">Капитан координирует все системы. Для финального манёвра требуется согласие участников, которые находятся на связи. <b>Разговоры не расходуют циклы.</b></p><button id="leave-room" class="text-button">← Выбрать другую комнату</button>';
+$('copy-code').onclick=()=>copyText(room.code);
+for(const b of root.querySelectorAll('[data-role]'))b.onclick=()=>command('room.role',{role:b.dataset.role}).catch(()=>{});
+$('solo-role').onclick=()=>command('room.role',{role:'commander'}).catch(()=>{});
+if($('ready-room'))$('ready-room').onclick=()=>command('room.ready',{ready:!me.ready}).catch(()=>{});
+if($('start-room'))$('start-room').onclick=()=>command('room.start').catch(()=>{});
+if($('resume-room'))$('resume-room').onclick=()=>{lobbyManual=false;$('lobby-screen').hidden=true;ship?.setActive(network.ready);};
+$('leave-room').onclick=()=>{lobbyManual=false;command('room.leave').catch(()=>{});};
 }
+$('room-info').onclick=()=>{lobbyManual=true;$('lobby-screen').hidden=false;ship?.setActive(false);renderLobby();};
+function renderState(){if(!state)return;for(const name of ['oxygen','energy','hull']){$(name).textContent=state[name];$(name+'-bar').style.width=Math.min(100,Math.max(0,state[name]))+'%';$(name).closest('.resource').classList.toggle('critical',state[name]<=20);$(name).closest('.resource').setAttribute('aria-label',({oxygen:'Кислород',energy:'Энергия',hull:'Корпус'}[name])+': '+state[name]);} $('cycle').textContent=String(Math.min(state.cycle,8)).padStart(2,'0');$('scene-status').textContent=state.game_over?(state.victory?'Экипаж спасён':'Критический отказ'):state.cooling_repaired?'Контур охлаждения восстановлен':'Аварийный режим';ship?.updateState(state);$('map-reactor-status').className=state.reactor_active?'operational':'attention';$('map-bio-status').className=state.greenhouse_active?'operational':'attention';$('map-reactor-status').title=state.reactor_active?'Реактор активен':'Реактор отключён';$('map-bio-status').title=state.greenhouse_active?'Оранжерея активна':'Оранжерея отключена';renderQuest();if(state.game_over&&!ended&&room?.started){ended=true;showEnding();}}
+function quest(){const s=state;if(s.game_over)return{n:5,title:s.victory?'Вы изменили исход':'Последний сигнал',desc:'Экспедиция завершена. Разберите решения команды в бортовом журнале.',checks:[['Миссия завершена',true],['Причина аварии установлена',s.investigation_solved]],action:'Открыть разбор миссии'};if(!s.cooling_repaired||!s.reactor_active)return{n:1,title:'Сердце корабля',desc:'Стабилизируйте охлаждение перед запуском реактора. Действуйте в правильном порядке.',checks:[['Восстановить охлаждение',s.cooling_repaired],['Запустить реактор',s.reactor_active]],action:'Проверить системы'};if(!s.greenhouse_active)return{n:2,title:'Право на вдох',desc:'Каждый цикл расходует кислород. Верните к жизни оранжерею и сбалансируйте питание.',checks:[['Восстановить питание',s.reactor_active],['Запустить оранжерею',s.greenhouse_active]],action:'Открыть операции'};if(!s.archive_restored||!s.investigation_solved)return{n:3,title:'Что произошло?',desc:'Восстановите архив. Сопоставьте найденные свидетельства и установите причину аварии.',checks:[['Восстановить архив',s.archive_restored],['Сопоставить три улики',s.investigation_solved]],action:s.archive_restored?'Сопоставить улики':'Восстановить архив'};return{n:4,title:'Цена спасения',desc:'Выберите стратегию. Сохранить корабль или эвакуировать людей — решение за экипажем.',checks:[['Причина аварии установлена',s.investigation_solved],['Рассчитать курс',s.course_calculated]],action:'Выбрать спасательный манёвр'};}
+function renderQuest(){const q=quest();$('quest-title').textContent=q.title;$('quest-description').textContent=q.desc;$('quest-number').textContent=String(q.n).padStart(2,'0')+' / 05';$('quest-checklist').innerHTML=q.checks.map(([text,done])=>'<div class="'+(done?'done':'')+'"><i>'+(done?'✓':'')+'</i>'+escape(text)+'</div>').join('');$('quest-action').innerHTML=escape(q.action)+'<span>↗</span>';$('quest-progress').innerHTML=Array.from({length:5},(_,i)=>'<i class="'+(i<q.n?'done':'')+'"></i>').join('');$('quest-action').onclick=()=>state.game_over?showEnding():q.n===3&&state.archive_restored?investigation():operations();}
+function canRole(action){const role=room?.members?.find(p=>p.id===user?.id)?.role;if(role==='commander'||role==='captain')return true;if(action==='start_greenhouse')return role==='biologist';if(['restore_archive','calculate_course'].includes(action))return role==='navigator';if(['repair_cooling','start_reactor','use_battery'].includes(action))return role==='engineer';return false;}
+function operations(){
+ if(!state){toast('Ожидаем состояние корабля');return;}
+ modal('<span class="eyebrow">СИСТЕМЫ КОРАБЛЯ / ЦИКЛ '+state.cycle+'</span><h2>Бортовой пульт</h2><p>Оцените условия и стоимость. Перед выполнением сервер покажет точный прогноз ресурсов для всей команды.</p><div class="operation-filters" role="group" aria-label="Фильтр операций"><button data-filter="all" aria-pressed="true">Все системы</button><button data-filter="engineering" aria-pressed="false">Энергия</button><button data-filter="life" aria-pressed="false">Жизнеобеспечение</button><button data-filter="navigation" aria-pressed="false">Навигация</button><button data-filter="final" aria-pressed="false">Спасение</button></div><div id="operation-list" class="operation-list"></div><p class="source-origin">Обычная операция расходует один цикл. Подключение батареи не расходует цикл. Цена манёвра рассчитывается отдельно.</p>');
+ const group=id=>id.startsWith('final')?'final':['repair_cooling','start_reactor','use_battery'].includes(id)?'engineering':id==='start_greenhouse'?'life':'navigation';
+ const render=filter=>{
+  $('operation-list').replaceChildren();
+  for(const a of [...actions,...finals].filter(a=>filter==='all'||group(a.id)===filter)){
+   const done=!!a.done?.(state), allowed=a.enabled(state)&&canRole(a.id);
+   const reason=done?'Выполнено':state.game_over?'Миссия завершена':!network.ready?'Нет связи с кораблём':!canRole(a.id)?'Нужен профильный специалист или капитан':!a.enabled(state)?'Не выполнены условия. Откройте для подробностей':a.free?'Без расхода цикла':'Можно рассчитать результат';
+   const b=document.createElement('button');b.className='operation-row'+(done?' completed':'')+(!allowed?' blocked':'');b.disabled=done||state.game_over||!network.ready||pending;
+   b.innerHTML='<span class="status-icon">'+(done?'✓':a.id.startsWith('final')?'◈':'ϟ')+'</span><span class="operation-copy"><b>'+escape(a.name)+'</b><p>'+escape(a.desc)+'</p><em>'+escape(reason)+'</em></span><small>'+escape(done?'ГОТОВО':a.cost)+'</small>';
+   b.onclick=()=>confirmAction(a);$('operation-list').append(b);
+  }
+ };
+ document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-filter]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));render(b.dataset.filter);});
+ render('all');
+}
+async function confirmAction(a){if(!state)return;const allowed=a.enabled(state)&&canRole(a.id);modal('<span class="eyebrow">ОПЕРАЦИЯ ЭКИПАЖА</span><h2>'+escape(a.name)+'</h2><p>'+escape(a.desc)+'</p><div class="dialog-stat"><span>Стоимость</span><strong>'+escape(a.cost)+'</strong></div><div id="action-preview"><p>Рассчитываю итог с учётом расхода систем…</p></div><div class="dialog-stat"><span>Версия состояния</span><strong>'+state.version+'</strong></div><p style="margin-top:18px">'+(allowed?'Действие повлияет на всю команду. '+(a.id.startsWith('final')?'Участники на связи подтвердят решение.':'После операции состояние синхронизируется.') :canRole(a.id)?'Не выполнены условия операции. Проверьте ресурсы и необходимые системы.':'Операция относится к другой специальности. Обратитесь к специалисту или капитану.')+'</p><div class="dialog-actions"><button id="confirm-action" class="primary" disabled>Подтвердить ↗</button><button id="discuss-action" class="secondary">Обсудить с экипажем</button></div>');const version=state.version;const previewRoot=$('action-preview');$('discuss-action').onclick=()=>{closeModal();setChatMode('team');$('comms-panel').hidden=false;$('chat-input').focus();};$('confirm-action').onclick=async()=>{if(pending)return;pending=true;$('confirm-action').disabled=true;try{const result=await network.request('game.action',{action:a.id,expected_version:version});closeModal();toast(result.pending?'Решение отправлено экипажу на подтверждение.':'Операция выполнена. Состояние сохранено.');}catch(e){toast(e.message);network.request('game.action',{action:'get_state'}).catch(()=>{});if($('confirm-action'))$('confirm-action').disabled=false;}finally{pending=false;}};try{const result=await network.request('game.preview',{action:a.id,expected_version:version});if($('action-preview')!==previewRoot)return;const after=result.after;if(result.allowed&&after){$('confirm-action').disabled=!allowed;previewRoot.innerHTML='<div class="dialog-stat"><span>После операции · O₂ / E / H</span><strong>'+after.oxygen+' / '+after.energy+' / '+after.hull+'</strong></div><p class="source-origin">Итог включает обычный расход систем. '+(after.game_over?(after.victory?'Манёвр завершает миссию спасением.':'Внимание: этот ход завершит миссию потерей корабля.'):'Следующий цикл: '+after.cycle)+'</p>';}else{previewRoot.textContent=result.reason||'Операция пока недоступна';$('confirm-action').disabled=true;}}catch(e){if($('action-preview')===previewRoot){previewRoot.textContent=e.message;$('confirm-action').disabled=true;}}}
+function investigation(){if(!state)return;modal('<span class="eyebrow">РАССЛЕДОВАНИЕ / НАЙДЕННЫЕ ФАКТЫ</span><h2>Восстановите цепочку событий</h2><p>Выберите три свидетельства, которые вместе объясняют причину аварии. Новые записи открываются после ремонта охлаждения и восстановления архива.</p><form id="clue-form">'+(state.unlocked_clues||[]).map(id=>'<label class="clue-option"><input type="checkbox" name="clue" value="'+escape(id)+'">'+escape(clueNames[id]||id)+'</label>').join('')+'<p id="clue-result" class="error" role="status"></p><button class="primary" '+(state.investigation_solved||state.game_over?'disabled':'')+'>'+(state.investigation_solved?'Причина установлена':'Проверить гипотезу ↗')+'</button></form>');$('clue-form').onsubmit=async e=>{e.preventDefault();const clues=[...$('clue-form').querySelectorAll(':checked')].map(i=>i.value);if(clues.length!==3){$('clue-result').textContent='Выберите ровно три разных свидетельства.';return;}e.submitter.disabled=true;try{const r=await network.request('investigation.solve',{clues,expected_version:state.version});$('clue-result').textContent=r.message;if(r.solved)toast('Причина аварии установлена.');}catch(err){$('clue-result').textContent=err.message;}finally{if($('clue-form'))e.submitter.disabled=false;}};}
+function journal(){if(!state)return;modal('<span class="eyebrow">СОХРАНЁННЫЕ РЕШЕНИЯ / ОБЩИЙ ЖУРНАЛ</span><h2>История экспедиции</h2><div>'+[...state.logs].reverse().map(x=>'<p class="journal-log">'+escape(x)+'</p>').join('')+'</div>');}
+function crew(){if(!room)return;modal('<span class="eyebrow">ЭКСПЕДИЦИЯ '+escape(room.code)+'</span><h2>Ваш экипаж</h2>'+room.members.map(p=>'<div class="crew-row"><span class="avatar">'+escape(p.name.slice(0,2))+'</span><div>'+escape(p.name)+(p.id===user?.id?' · вы':'')+'<small>'+escape(roleNames[p.role]||'Без роли')+' / '+(p.online?'на связи':'не в сети')+'</small></div><i class="dot" style="opacity:'+(p.online?'1':'.2')+'"></i></div>').join('')+'<div class="dialog-actions"><button id="crew-invite" class="primary">Пригласить участников ↗</button><button id="crew-lobby" class="secondary">Открыть комнату</button></div>');$('crew-invite').onclick=invite;$('crew-lobby').onclick=()=>{closeModal();$('room-info').click();};}
+function showEnding(){if(!state)return;const title=state.victory?(state.victory_type==='evacuated'?'Вы сохранили экипаж':'Корабль снова держит курс'):'Корабль замолчал';modal('<span class="eyebrow">ПРОТОКОЛ ЗАВЕРШЁН / '+(state.victory?'МИССИЯ ВЫПОЛНЕНА':'КРИТИЧЕСКИЙ ОТКАЗ')+'</span><h2>'+title+'</h2><p>'+escape(state.logs.at(-1)||'')+'</p><div class="dialog-stat"><span>Кислород / Энергия / Корпус</span><strong>'+state.oxygen+' / '+state.energy+' / '+state.hull+'</strong></div><div class="dialog-stat"><span>Причина аварии</span><strong>'+(state.investigation_solved?'Установлена':'Не установлена')+'</strong></div><p style="margin-top:18px">Обсудите решения: что помогло, какой ресурс стал критическим и какой путь вы попробуете в следующий раз?</p><div class="dialog-actions"><button id="ending-journal" class="secondary">Разобрать решения</button>'+(room?.owner===user?.id?'<button id="new-mission" class="primary">Новая миссия ↗</button>':'')+'</div>');$('ending-journal').onclick=journal;if($('new-mission'))$('new-mission').onclick=()=>{modal('<span class="eyebrow">НОВАЯ МИССИЯ</span><h2>Начать заново?</h2><p>Текущая партия будет сброшена для всего экипажа. Персональная память новой миссии начнётся отдельно.</p><div class="dialog-actions"><button id="reset-confirm" class="primary">Сбросить партию</button><button id="reset-cancel" class="secondary">Продолжить разбор</button></div>');$('reset-cancel').onclick=showEnding;$('reset-confirm').onclick=()=>command('room.reset').then(closeModal).catch(()=>{});};}
+function renderDecision(){const banner=$('decision-banner');banner.hidden=!room?.proposal;if(banner.hidden)return;const p=room.proposal;const name=finals.find(a=>a.id===p.action)?.name||p.action;const voted=!!p.approved?.[user?.id];banner.innerHTML='<span class="eyebrow">КОМАНДНОЕ РЕШЕНИЕ</span><p>'+escape(name)+'</p><p style="font-size:10px">Подтвердили '+Object.keys(p.approved||{}).length+' из '+p.voters.length+' участников. Другие операции отменят это решение.</p><button id="approve-decision" class="primary small" '+(voted?'disabled':'')+'>'+(voted?'Ваше согласие получено':'Подтверждаю')+'</button><button id="reject-decision" class="secondary small">Обсудим ещё</button>';
+const vote=approve=>network.request('decision.vote',{approve,expected_version:p.version}).catch(e=>toast(e.message));$('approve-decision').onclick=()=>vote(true);$('reject-decision').onclick=()=>vote(false);}
+function setChatMode(mode){chatMode=mode;$('chat-send').disabled=mode==='npc'&&chatBusy;for(const b of document.querySelectorAll('[data-chat]'))b.classList.toggle('active',b.dataset.chat===mode);$('npc-profile').hidden=mode==='team';$('suggestions').hidden=mode==='team';$('chat-input').placeholder=mode==='team'?'Сообщение экипажу…':'Спросить наставника…';$('chat-foot').textContent=mode==='team'?'Общая беседа участников этой комнаты':'Источники доступны без интернета';renderChat();}
+function selectAgent(id){selectedAgent=id;$('agent-select').value=id;const p=CREW.find(x=>x.id===id);$('agent-role').textContent=p?.role||'';$('agent-initials').textContent=p?.initials||'';setChatMode('npc');$('comms-panel').hidden=false;ship?.crew?.setTalking?.(id);if(!histories.has(id)){histories.set(id,[]);network.request('dialogue.history',{agent_id:id}).then(r=>{if(Array.isArray(r.messages)&&histories.get(id)?.length===0){histories.set(id,r.messages);if(selectedAgent===id)renderChat();}}).catch(()=>{});}renderChat();}
+$('agent-select').onchange=()=>selectAgent($('agent-select').value);
+for(const b of document.querySelectorAll('[data-chat]'))b.onclick=()=>setChatMode(b.dataset.chat);
+$('close-comms').onclick=()=>$('comms-panel').hidden=true;
+$('toggle-comms').onclick=()=>{$('comms-panel').hidden=!$('comms-panel').hidden;};
+$('toggle-hud').onclick=()=>$('game-stage').classList.toggle('hud-hidden');
+async function navigateTo(target,focus){if(navigating)return;navigating=true;ship?.controls.resetKeys();try{const p=await network.request('player.teleport',{target});ship?.spawn(p);focus();}catch(e){toast(e.message);}finally{navigating=false;}}
+async function visitAgent(id){await navigateTo(id,()=>{ship?.focusCrew(id);syncView('overview');});}
+$('focus-agent').onclick=()=>visitAgent(selectedAgent);
+window.addEventListener('crew-select',e=>{selectAgent(e.detail.agentID);visitAgent(e.detail.agentID);});
+function interactObject(item){ship?.controls.unlock();if(item.action==='laboratory')laboratory.open();else if(item.action==='journal')journal();else operations();}
+window.addEventListener('ship-object',e=>interactObject(e.detail));
+function renderChat(){const root=$('chat');root.replaceChildren();if(chatMode==='team'){ $('chat-mode').innerHTML='<i class="dot"></i> Экипаж · общая беседа';for(const item of room?.chat||[])appendMessage({role:item.name===user?.username?'user':'assistant',text:item.text,name:item.name});if(!room?.chat?.length)appendMessage({role:'system',text:'Согласуйте действия здесь. Сообщения видят только участники вашей комнаты.'});return;}
+const rows=histories.get(selectedAgent)||[];if(!rows.length)appendMessage({role:'assistant',text:intro[selectedAgent]});for(const item of rows)appendMessage(item);if(chatBusy)appendMessage({role:'system',text:'Ищу материалы и готовлю ответ… Движение и операции доступны.'});root.scrollTop=root.scrollHeight;
+}
+function appendMessage(item){const row=document.createElement('div');row.className='chat-message '+(item.role||'assistant');const label=document.createElement('span');label.className='message-author';label.textContent=item.name|| (item.role==='user'?'ВЫ':item.role==='system'?'АСТРА':CREW.find(x=>x.id===selectedAgent)?.short||'НАСТАВНИК');const p=document.createElement('p');p.textContent=item.text||item.reply?.text||'';row.append(label,p);const reply=item.reply;if(reply){const meta=document.createElement('div');meta.className='message-meta';meta.textContent=(reply.mode==='model'?'Локальная модель + RAG':reply.mode==='rules'?'Расчёт сервера':'Справочный ответ из документов')+(reply.tool_transport?' · '+reply.tool_transport:'');row.append(meta);$('chat-mode').innerHTML='<i class="dot"></i> '+escape(reply.mode==='model'?'Локальная модель + RAG':'Документы и правила · резервный режим');const evidence=reply.evidence||[];for(const source of (reply.citations|| (reply.citation?[reply.citation]:[]))){const matching=evidence.filter(x=>x.source?.id===source.document_id);const button=document.createElement('button');button.className='source-chip';button.textContent='↗ '+source.source_title;button.onclick=()=>showSource(source,matching);row.append(button);}const a=reply.analysis;if(a?.systems_diagnosis?.warnings?.length){const n=document.createElement('div');n.className='analysis-card';n.textContent=a.systems_diagnosis.warnings.join(' · ');row.append(n);}}
+$('chat').append(row);
+}
+function showSource(source,evidence){modal('<span class="eyebrow">ЛОКАЛЬНЫЙ ИСТОЧНИК / '+escape(source.content_mode==='summary'?'ПЕРЕСКАЗ':source.content_mode==='game_rules'?'ПРАВИЛА СЦЕНАРИЯ':'МАТЕРИАЛ')+'</span><h2>'+escape(source.source_title)+'</h2><div class="source-excerpt">'+escape(evidence.length?evidence.map(x=>x.text).join('\n\n'):source.excerpt||'')+'</div><p class="source-origin">'+escape(source.source_url||source.section||'Локальная база знаний')+'</p>');}
+$('chat-form').onsubmit=async e=>{e.preventDefault();const text=$('chat-input').value.trim();if(!text)return;if(chatMode==='team'){if($('chat-send').disabled)return;$('chat-send').disabled=true;try{await network.request('chat.send',{text});$('chat-input').value='';}catch(err){toast(err.message);}finally{$('chat-send').disabled=chatMode==='npc'&&chatBusy;}return;}
+if(chatBusy)return;const id=selectedAgent;const scope=historyScope;const rows=histories.get(id)||[];rows.push({role:'user',text});histories.set(id,rows);$('chat-input').value='';chatBusy=true;$('chat-send').disabled=true;renderChat();try{const reply=await network.request('agent.talk',{agent_id:id,text});if(scope===historyScope){rows.push({role:'assistant',text:reply.text,reply});histories.set(id,rows);}}catch(err){if(scope===historyScope)rows.push({role:'system',text:err.message});}finally{if(scope===historyScope){chatBusy=false;$('chat-send').disabled=false;renderChat();}}};
+$('chat-input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('chat-form').requestSubmit();}});
+for(const b of document.querySelectorAll('[data-question]'))b.onclick=()=>{$('chat-input').value=b.dataset.question;$('chat-form').requestSubmit();};
+$('operations-button').onclick=operations;$('journal-button').onclick=journal;$('crew-button').onclick=crew;$('investigation-button').onclick=investigation;
+function setView(mode){ship?.setMode(mode);syncView(mode);}
+function syncView(mode){$('overview-view').classList.toggle('selected',mode==='overview');$('explore-view').classList.toggle('selected',mode==='explore');if(mode==='explore'){$('comms-panel').hidden=true;}}
+$('overview-view').onclick=()=>{ship?.resetOverview();setView('overview');};$('explore-view').onclick=()=>setView('explore');
+for(const b of document.querySelectorAll('[data-room]'))b.onclick=()=>navigateTo(b.dataset.room,()=>{ship?.focus(b.dataset.room);syncView('overview');});
+$('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else if(document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen();else toast('Полноэкранный режим недоступен. Можно развернуть окно браузера.');}catch{toast('Браузер не разрешил fullscreen. Игровая область уже занимает всё окно.');}};
+document.addEventListener('fullscreenchange',()=>{$('fullscreen').setAttribute('aria-label',document.fullscreenElement?'Выйти из полноэкранного режима':'На весь экран');$('fullscreen').title=document.fullscreenElement?'Выйти из полноэкранного режима':'На весь экран';const label=$('fullscreen').querySelector('.fullscreen-label');if(label)label.textContent=document.fullscreenElement?'Свернуть':'На весь экран';requestAnimationFrame(()=>ship?.resize());});
+window.addEventListener('keydown',e=>{if(['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)||e.target.isContentEditable||$('action-dialog').open||!$('lobby-screen').hidden||!user||!room?.started)return;if(e.code==='KeyC'){e.preventDefault();operations();}if(e.code==='KeyE'&&ship){const target=ship.nearestInteraction();if(target?.type==='npc'){ship.controls.unlock();selectAgent(target.id);}else if(target)interactObject(target);else toast('Подойдите ближе к персонажу или пульту. В обзоре выберите объект мышью.');}});
+setInterval(()=>{if(!ship)return;const target=ship.mode==='explore'?ship.nearestInteraction():ship.hoveredStation;$('interaction-hint').hidden=ship.mode!=='explore'&&!target;$('interaction-hint').querySelector('span').textContent=target?.label||'Подойдите к наставнику или пульту';$('interaction-hint').querySelector('kbd').textContent=ship.mode==='explore'?'E':'↗';},250);
+async function copyText(value){try{await navigator.clipboard.writeText(value);toast('Скопировано');}catch{modal('<span class="eyebrow">ПРИГЛАШЕНИЕ</span><h2>Скопируйте вручную</h2><input id="copy-fallback" readonly value="'+escape(value)+'">');$('copy-fallback').select();}}
+async function invite(){try{const response=await fetch('/api/host');const h=await response.json();const addresses=(h.urls?.length?h.urls:[location.origin]);modal('<span class="eyebrow">СОБЕРИТЕ ЭКИПАЖ / LAN</span><h2>Пригласить на борт</h2><p>На другом ноутбуке в той же Wi-Fi сети откройте адрес сервера и присоединитесь по коду <b>'+escape(room?.code||'')+'</b>.</p><div id="invite-links"></div><p class="source-origin">Если подключение не проходит, разрешите приложению доступ в частной сети Windows и проверьте, что Wi-Fi не изолирует устройства.</p>');for(const address of addresses){const button=document.createElement('button');button.className='source-chip';const url=address+'/?room='+encodeURIComponent(room?.code||'');button.textContent=url+' ↗';button.onclick=()=>copyText(url);$('invite-links').append(button);}}catch(e){toast(e.message);}}
+$('invite').onclick=invite;
+$('help-button').onclick=()=>modal('<span class="eyebrow">БЫСТРЫЙ БРИФИНГ</span><h2>Вы на «Горизонте–7»</h2><ol class="numbered-help"><li>Корабль повреждён. У команды восемь циклов. Разговоры и изучение материалов не тратят время.</li><li>Сначала изучите охлаждение и питание, затем оранжерею. Откройте архив и сопоставьте улики.</li><li>В обзоре выбирайте отсек или персонажа. Перетаскивание вращает камеру, колёсико меняет масштаб. В исследовании: WASD/стрелки — движение, мышь — обзор, E — разговор. Escape освобождает курсор.</li><li>На вкладке «Экипаж» можно обсуждать решения. Операции меняют ресурсы у всех. Финальные решения требуют общего согласия.</li><li>Партия и диалоги сохраняются на сервере. Вернуться можно с того же аккаунта. Для самостоятельной игры выберите универсальную роль.</li></ol><p class="source-origin">Персонажи — образовательные реконструкции. Игровые роли вымышлены; ответы не являются прямой речью космонавтов. Модель и резервные справочные ответы отмечены отдельно.</p>');
+const flightDeck = installFlightDeck({getShip:()=>ship,modal,toast,help:()=>$('help-button').click(),crew:showMentors});
+updateAuth();renderChat();network.resume().then(u=>{if(u)showApp(u);else renderLobby();}).catch(e=>toast(e.message));
 
-window.addEventListener('DOMContentLoaded', () => {
-    new LastCrewApp();
-});
+window.addEventListener('world-cache',e=>{let label=document.getElementById('cache-status');if(!label){label=document.createElement('button');label.id='cache-status';label.className='cache-status';document.getElementById('game-stage').append(label);label.onclick=()=>{const s=ship.streamWorld.stats;modal('<span class="eyebrow">ДИАГНОСТИКА МИРА</span><h2>Кеш и область интереса</h2><div class="dialog-stat"><span>W / реальные ресурсы</span><strong>'+s.world_bytes.toLocaleString()+' байт</strong></div><div class="dialog-stat"><span>C / удерживается</span><strong>'+s.resident_bytes.toLocaleString()+' байт</strong></div><div class="dialog-stat"><span>Резерв загрузок</span><strong>'+s.reserved_bytes+' байт</strong></div><div class="dialog-stat"><span>Пик за маршрут</span><strong>'+(s.peak_ratio*100).toFixed(2)+'%</strong></div><p style="margin-top:18px">Общие зависимости учитываются один раз. Источник — файлы manifest; загрузки входят в бюджет. FPS '+ship.fps+'. '+(ship.renderer.isSoftware?'Совместимый Canvas-рендер.':'WebGL-рендер.')+'</p>');};}label.textContent='МИР '+(e.detail.ratio*100).toFixed(1)+'% / 10%';});
+
+$('lab-button').onclick=()=>laboratory.open();
+
+function showMentors(){
+ const disciplines={savinykh:['КОМАНДОВАНИЕ','Стратегия спасения','Сопоставьте варианты манёвра, оцените риск и договоритесь о решении.'],dzhanibekov:['ИНЖЕНЕРИЯ','Сердце корабля','Разберитесь с охлаждением и запустите реактор. Проверьте последствия каждого шага.'],ryazansky:['БИОЛОГИЯ','Право на вдох','Исследуйте биопробы, восстановите оранжерею и сохраните кислород.'],krikalev:['НАВИГАЦИЯ','Путь домой','Восстановите архив, соберите свидетельства и рассчитайте безопасный курс.']};
+ modal('<span class="eyebrow">ЧЕТЫРЕ НАСТАВНИКА / ОДНА МИССИЯ</span><h2>На борту есть к кому обратиться</h2><div class="mentor-grid">'+CREW.map((p,i)=>{const d=disciplines[p.id];return '<article class="mentor-card"><div class="mentor-insignia">'+p.initials+'<small>0'+(i+1)+'</small></div><span class="eyebrow">'+d[0]+'</span><h3>'+escape(p.short)+'</h3><strong>'+d[1]+'</strong><p>'+d[2]+'</p>'+(room?.started?'<button class="text-button" data-mentor="'+p.id+'">Открыть диалог ↗</button>':'')+'</article>';}).join('')+'</div><p class="source-origin">Образовательные реконструкции реальных космонавтов. Сюжет и должности на корабле вымышлены. В диалогах отмечаются источники и режим ответа.</p>');
+ document.querySelectorAll('[data-mentor]').forEach(b=>b.onclick=()=>{closeModal();selectAgent(b.dataset.mentor);visitAgent(b.dataset.mentor);});
+}

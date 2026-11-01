@@ -24,23 +24,27 @@ type Broadcaster interface {
 }
 
 type LivePlayer struct {
-	User          model.User
-	Position      model.Position
-	Yaw           float64
-	LastSeq       uint64
-	LastInputTime time.Time
-	Dirty         bool
+	User           model.User
+	Position       model.Position
+	Yaw            float64
+	LastSeq        uint64
+	LastInputTime  time.Time
+	Dirty          bool
+	MovementBudget float64
 }
 
 // ServerLoop управляет активным игровым циклом 20 Гц и валидацией перемещений.
 type ServerLoop struct {
-	repo         storage.Players
-	broadcaster  Broadcaster
-	log          *slog.Logger
-	mu           sync.RWMutex
-	players      map[string]*LivePlayer
-	stopCh       chan struct{}
-	running      bool
+	RoomOf      func(string) string
+	Walkable    func(float64, float64) bool
+	repo        storage.Players
+	broadcaster Broadcaster
+	log         *slog.Logger
+	mu          sync.RWMutex
+	saveMu      sync.Mutex
+	players     map[string]*LivePlayer
+	stopCh      chan struct{}
+	running     bool
 
 	// Константы валидации перемещений
 	maxSpeed     float64 // 25.0 м/с (бег 16 м/с + резерв на лаг пакетов)
@@ -114,6 +118,7 @@ func (l *ServerLoop) Stop() {
 func (l *ServerLoop) tick() {
 	l.mu.RLock()
 
+	roomOf := l.RoomOf
 	snapshotItems := make([]protocol.PlayerSnapshotItem, 0, len(l.players))
 	for id, p := range l.players {
 		snapshotItems = append(snapshotItems, protocol.PlayerSnapshotItem{
@@ -134,7 +139,20 @@ func (l *ServerLoop) tick() {
 	}
 
 	if l.broadcaster != nil {
-		l.broadcaster.Broadcast("world.snapshot", snapshot)
+		if roomOf == nil {
+			l.broadcaster.Broadcast("world.snapshot", snapshot)
+		} else {
+			for _, target := range snapshotItems {
+				room := roomOf(target.ID)
+				filtered := []protocol.PlayerSnapshotItem{}
+				for _, item := range snapshotItems {
+					if (room != "" && roomOf(item.ID) == room) || item.ID == target.ID {
+						filtered = append(filtered, item)
+					}
+				}
+				l.broadcaster.Publish(target.ID, "world.snapshot", protocol.WorldSnapshot{ServerTime: snapshot.ServerTime, Players: filtered})
+			}
+		}
 	}
 }
 
@@ -143,13 +161,17 @@ func (l *ServerLoop) Join(ctx context.Context, user model.User, state model.Play
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	if l.Walkable != nil && !l.Walkable(state.Position.X, state.Position.Z) {
+		state.Position = model.Position{X: -15, Y: 1.7, Z: 0}
+	}
 	l.players[user.ID] = &LivePlayer{
-		User:          user,
-		Position:      state.Position,
-		Yaw:           state.Yaw,
-		LastSeq:       0, // Новый сокет сбрасывает sequence
-		LastInputTime: time.Now(),
-		Dirty:         false,
+		User:           user,
+		Position:       state.Position,
+		Yaw:            state.Yaw,
+		LastSeq:        0, // Новый сокет сбрасывает sequence
+		LastInputTime:  time.Now(),
+		Dirty:          false,
+		MovementBudget: 1.5,
 	}
 
 	l.log.Info("player joined simulation loop", "player_id", user.ID, "username", user.Username, "pos", state.Position)
@@ -158,6 +180,9 @@ func (l *ServerLoop) Join(ctx context.Context, user model.User, state model.Play
 
 // Input валидирует входные данные перемещения игрока (скорость, границы, монотонность seq).
 func (l *ServerLoop) Input(ctx context.Context, playerID string, input protocol.PlayerInput) error {
+	if !input.Valid() {
+		return errors.New("invalid movement")
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -180,6 +205,9 @@ func (l *ServerLoop) Input(ctx context.Context, playerID string, input protocol.
 		return errors.New("coordinates out of bounds")
 	}
 
+	if l.Walkable != nil && !l.Walkable(input.X, input.Z) {
+		return errors.New("оборудование или граница отсека")
+	}
 	// 3. Проверка допустимой скорости (анти-телепортация)
 	now := time.Now()
 	dt := now.Sub(p.LastInputTime).Seconds()
@@ -189,16 +217,16 @@ func (l *ServerLoop) Input(ctx context.Context, playerID string, input protocol.
 
 	dx := input.X - p.Position.X
 	dz := input.Z - p.Position.Z
-	dist := math.Sqrt(dx*dx + dz*dz)
+	dy := input.Y - p.Position.Y
+	dist := math.Sqrt(dx*dx + dz*dz + dy*dy)
 
 	if dist > l.maxFrameDist {
 		l.log.Warn("player movement delta exceeded", "player_id", playerID, "dist", dist)
 		return errors.New("movement delta too large")
 	}
 
-	speed := dist / dt
-	if speed > l.maxSpeed && dist > 2.0 {
-		l.log.Warn("player speed violation", "player_id", playerID, "speed", speed, "max", l.maxSpeed)
+	budget := math.Min(3, p.MovementBudget+dt*l.maxSpeed)
+	if dist > budget {
 		return errors.New("speed limit exceeded")
 	}
 
@@ -210,12 +238,15 @@ func (l *ServerLoop) Input(ctx context.Context, playerID string, input protocol.
 	p.LastSeq = input.Seq
 	p.LastInputTime = now
 	p.Dirty = true
+	p.MovementBudget = budget - dist
 
 	return nil
 }
 
 // Leave удаляет игрока из цикла симуляции и сохраняет его актуальное состояние на диск.
 func (l *ServerLoop) Leave(ctx context.Context, playerID string) error {
+	l.saveMu.Lock()
+	defer l.saveMu.Unlock()
 	l.mu.Lock()
 	p, exists := l.players[playerID]
 	if exists {
@@ -233,6 +264,16 @@ func (l *ServerLoop) Leave(ctx context.Context, playerID string) error {
 		})
 	}
 	return nil
+}
+
+func (l *ServerLoop) Persist(ctx context.Context) {
+	l.saveMu.Lock()
+	defer l.saveMu.Unlock()
+	for _, state := range l.GetAllPlayersStates() {
+		if err := l.repo.SavePlayer(ctx, state); err != nil {
+			l.log.Error("save player", "error", err)
+		}
+	}
 }
 
 // GetDirtyPlayers возвращает копию состояний игроков, чьи позиции изменились с прошлого сохранения.
@@ -278,4 +319,11 @@ func (l *ServerLoop) GetAllPlayersStates() []model.PlayerState {
 	}
 
 	return all
+}
+
+func (l *ServerLoop) ConfigureWorld(roomOf func(string) string, walkable func(float64, float64) bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.RoomOf = roomOf
+	l.Walkable = walkable
 }

@@ -1,4 +1,4 @@
-﻿package server_test
+package server_test
 
 import (
 	"bytes"
@@ -199,7 +199,7 @@ func TestHTTPStaticAndValidation(t *testing.T) {
 		status       int
 		contains     string
 	}{
-		{"/healthz", "", 200, `"status":"ok"`}, {"/", "", 200, "ХроноГрад"},
+		{"/healthz", "", 200, `"status":"ok"`}, {"/", "", 200, "Последний экипаж"},
 		{"/vendor/three.module.js", "", 200, "REVISION"}, {"/room/history", "text/html", 200, "/src/main.js"},
 		{"/missing.js", "text/html", 404, ""}, {"/api/missing", "text/html", 404, "not_found"},
 		{"/vendor/", "", 404, ""}, {"/embed.go", "", 404, ""},

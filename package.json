@@ -1,0 +1,8 @@
+{
+  "name": "last-crew-local",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "sh scripts/preview.sh"
+  }
+}

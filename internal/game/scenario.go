@@ -11,6 +11,7 @@ import (
 )
 
 type GameState struct {
+	Version             uint64   `json:"version"`
 	Cycle               int      `json:"cycle"`
 	MaxCycles           int      `json:"max_cycles"`
 	Oxygen              int      `json:"oxygen"`
@@ -38,6 +39,7 @@ type ScenarioEngine struct {
 func NewScenarioEngine() *ScenarioEngine {
 	return &ScenarioEngine{
 		state: GameState{
+			Version:             1,
 			Cycle:               1,
 			MaxCycles:           8,
 			Oxygen:              64,
@@ -86,16 +88,16 @@ func (s *ScenarioEngine) ExecuteAction(action string) (GameState, error) {
 	defer s.mu.Unlock()
 
 	if s.state.GameOver {
-		return s.state, errors.New("игра уже завершена")
+		return copyGameState(s.state), errors.New("игра уже завершена")
 	}
 
 	switch action {
 	case "start_reactor":
 		if s.state.ReactorActive {
-			return s.state, errors.New("реактор уже работает")
+			return copyGameState(s.state), errors.New("реактор уже работает")
 		}
 		if s.state.Energy < 8 {
-			return s.state, errors.New("недостаточно энергии (требуется 8 E)")
+			return copyGameState(s.state), errors.New("недостаточно энергии (требуется 8 E)")
 		}
 		s.state.Energy -= 8
 		s.state.ReactorActive = true
@@ -104,10 +106,10 @@ func (s *ScenarioEngine) ExecuteAction(action string) (GameState, error) {
 
 	case "repair_cooling":
 		if s.state.CoolingRepaired {
-			return s.state, errors.New("контур охлаждения уже исправен")
+			return copyGameState(s.state), errors.New("контур охлаждения уже исправен")
 		}
 		if s.state.Energy < 6 {
-			return s.state, errors.New("недостаточно энергии (требуется 6 E)")
+			return copyGameState(s.state), errors.New("недостаточно энергии (требуется 6 E)")
 		}
 		s.state.Energy -= 6
 		s.state.CoolingRepaired = true
@@ -117,10 +119,10 @@ func (s *ScenarioEngine) ExecuteAction(action string) (GameState, error) {
 
 	case "start_greenhouse":
 		if s.state.GreenhouseActive {
-			return s.state, errors.New("оранжерея уже запущена")
+			return copyGameState(s.state), errors.New("оранжерея уже запущена")
 		}
 		if s.state.Energy < 12 {
-			return s.state, errors.New("недостаточно энергии (требуется 12 E)")
+			return copyGameState(s.state), errors.New("недостаточно энергии (требуется 12 E)")
 		}
 		s.state.Energy -= 12
 		s.state.GreenhouseActive = true
@@ -129,7 +131,7 @@ func (s *ScenarioEngine) ExecuteAction(action string) (GameState, error) {
 
 	case "use_battery":
 		if !s.state.BatteryAvailable {
-			return s.state, errors.New("резервная батарея уже израсходована")
+			return copyGameState(s.state), errors.New("резервная батарея уже израсходована")
 		}
 		s.state.BatteryAvailable = false
 		s.state.Energy = minInt(100, s.state.Energy+25)
@@ -137,10 +139,10 @@ func (s *ScenarioEngine) ExecuteAction(action string) (GameState, error) {
 
 	case "restore_archive":
 		if s.state.ArchiveRestored {
-			return s.state, errors.New("архив АСТРЫ уже восстановлен")
+			return copyGameState(s.state), errors.New("архив АСТРЫ уже восстановлен")
 		}
 		if s.state.Energy < 2 {
-			return s.state, errors.New("недостаточно энергии (требуется 2 E)")
+			return copyGameState(s.state), errors.New("недостаточно энергии (требуется 2 E)")
 		}
 		s.state.Energy -= 2
 		s.state.ArchiveRestored = true
@@ -151,10 +153,10 @@ func (s *ScenarioEngine) ExecuteAction(action string) (GameState, error) {
 
 	case "calculate_course":
 		if s.state.CourseCalculated {
-			return s.state, errors.New("курс уже рассчитан")
+			return copyGameState(s.state), errors.New("курс уже рассчитан")
 		}
 		if s.state.Energy < 4 {
-			return s.state, errors.New("недостаточно энергии (требуется 4 E)")
+			return copyGameState(s.state), errors.New("недостаточно энергии (требуется 4 E)")
 		}
 		s.state.Energy -= 4
 		s.state.CourseCalculated = true
@@ -168,10 +170,10 @@ func (s *ScenarioEngine) ExecuteAction(action string) (GameState, error) {
 	// ФИНАЛЬНЫЕ МАНЁВРЫ
 	case "final_emergency":
 		if !s.state.ReactorActive {
-			return s.state, errors.New("для аварийного запуска реактор должен быть включён")
+			return copyGameState(s.state), errors.New("для аварийного запуска реактор должен быть включён")
 		}
 		if s.state.Energy < 22 {
-			return s.state, errors.New("недостаточно энергии (требуется 22 E)")
+			return copyGameState(s.state), errors.New("недостаточно энергии (требуется 22 E)")
 		}
 		s.state.Energy -= 22
 		if s.state.CoolingRepaired {
@@ -193,13 +195,13 @@ func (s *ScenarioEngine) ExecuteAction(action string) (GameState, error) {
 
 	case "final_ecosystem":
 		if !s.state.ReactorActive || !s.state.CoolingRepaired || !s.state.GreenhouseActive || !s.state.CourseCalculated {
-			return s.state, errors.New("требуется: реактор, охлаждение, оранжерея и рассчитанный курс")
+			return copyGameState(s.state), errors.New("требуется: реактор, охлаждение, оранжерея и рассчитанный курс")
 		}
 		if s.state.Energy < 18 || s.state.Oxygen < 25 || s.state.Hull < 40 {
-			return s.state, errors.New("недостаточно ресурсов: требуется E>=18, O>=25, H>=40")
+			return copyGameState(s.state), errors.New("недостаточно ресурсов: требуется E>=18, O>=25, H>=40")
 		}
 		if s.state.Cycle > 7 {
-			return s.state, errors.New("длительный манёвр требует минимум 2 оставшихся цикла")
+			return copyGameState(s.state), errors.New("длительный манёвр требует минимум 2 оставшихся цикла")
 		}
 		s.state.Energy -= 16
 		s.state.GameOver = true
@@ -209,10 +211,10 @@ func (s *ScenarioEngine) ExecuteAction(action string) (GameState, error) {
 
 	case "final_combined":
 		if !s.state.ReactorActive || !s.state.CoolingRepaired || !s.state.BatteryAvailable {
-			return s.state, errors.New("требуется: реактор, охлаждение и сохранённая резервная батарея")
+			return copyGameState(s.state), errors.New("требуется: реактор, охлаждение и сохранённая резервная батарея")
 		}
 		if s.state.Energy < 10 || s.state.Oxygen < 12 || s.state.Hull < 30 {
-			return s.state, errors.New("недостаточно ресурсов: требуется E>=10, O>=12, H>=30")
+			return copyGameState(s.state), errors.New("недостаточно ресурсов: требуется E>=10, O>=12, H>=30")
 		}
 		s.state.Energy -= 10
 		s.state.Oxygen -= 12
@@ -225,7 +227,7 @@ func (s *ScenarioEngine) ExecuteAction(action string) (GameState, error) {
 
 	case "final_evacuation":
 		if s.state.Energy < 4 || s.state.Oxygen < 6 || s.state.Hull <= 0 {
-			return s.state, errors.New("недостаточно ресурсов для отстрела модуля: требуется E>=4, O>=6")
+			return copyGameState(s.state), errors.New("недостаточно ресурсов для отстрела модуля: требуется E>=4, O>=6")
 		}
 		s.state.Energy -= 4
 		s.state.Oxygen -= 6
@@ -235,10 +237,11 @@ func (s *ScenarioEngine) ExecuteAction(action string) (GameState, error) {
 		s.addLog("АСТРА: Аварийный модуль отделён! Экипаж в безопасности. «Горизонт-7» утрачен.")
 
 	default:
-		return s.state, errors.New("неизвестное действие")
+		return copyGameState(s.state), errors.New("неизвестное действие")
 	}
 
-	return s.state, nil
+	s.state.Version++
+	return copyGameState(s.state), nil
 }
 
 // SolveInvestigation проверяет 3 улики для подтверждения причины аварии.
@@ -248,6 +251,21 @@ func (s *ScenarioEngine) SolveInvestigation(clues []string) (bool, string, error
 
 	if s.state.InvestigationSolved {
 		return true, "Причина аварии уже установлена.", nil
+	}
+	if s.state.GameOver {
+		return false, "", errors.New("игра уже завершена")
+	}
+	for _, clue := range clues {
+		unlocked := false
+		for _, available := range s.state.UnlockedClues {
+			if clue == available {
+				unlocked = true
+				break
+			}
+		}
+		if !unlocked {
+			return false, "", errors.New("сначала найдите выбранные доказательства")
+		}
 	}
 
 	hasFilter := false
@@ -268,6 +286,7 @@ func (s *ScenarioEngine) SolveInvestigation(clues []string) (bool, string, error
 
 	if hasFilter && hasImpact && hasChronology {
 		s.state.InvestigationSolved = true
+		s.state.Version++
 		msg := "Причина аварии подтверждена: микрометеорит повредил внешний радиатор, стружка забила фильтр охлаждения, а ИИ АСТРА выполнила защитное отключение оранжереи для спасения реактора!"
 		s.addLog("РАССЛЕДОВАНИЕ: " + msg)
 		return true, msg, nil
@@ -356,4 +375,10 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func copyGameState(s GameState) GameState {
+	s.Logs = append([]string(nil), s.Logs...)
+	s.UnlockedClues = append([]string(nil), s.UnlockedClues...)
+	return s
 }

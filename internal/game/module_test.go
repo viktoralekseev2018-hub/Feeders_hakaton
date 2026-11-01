@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 
 	"feeders/internal/agents"
 	"feeders/internal/model"
@@ -15,8 +16,9 @@ import (
 )
 
 type fakeSession struct {
-	user     model.User
-	messages []protocol.Envelope
+	user      model.User
+	messages  []protocol.Envelope
+	delivered chan struct{}
 }
 
 func (s *fakeSession) User() model.User { return s.user }
@@ -26,6 +28,9 @@ func (s *fakeSession) Send(kind, id string, payload any) bool {
 		panic(err)
 	}
 	s.messages = append(s.messages, e)
+	if kind == "agent.reply" && s.delivered != nil {
+		s.delivered <- struct{}{}
+	}
 	return true
 }
 
@@ -133,8 +138,10 @@ func TestAgentTalkIntegration(t *testing.T) {
 	}
 
 	m := New(repo, nil, fa, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	s := &fakeSession{user: model.User{ID: "astro-2", Username: "cadet"}}
+	s := &fakeSession{user: model.User{ID: "astro-2", Username: "cadet"}, delivered: make(chan struct{}, 1)}
 	ctx := context.Background()
+	init, _ := protocol.Message("player.init", "init", map[string]any{})
+	m.init(ctx, s, init)
 
 	msg, _ := protocol.Message("agent.talk", "req-talk-1", map[string]string{
 		"agent_id": "engineer",
@@ -142,6 +149,11 @@ func TestAgentTalkIntegration(t *testing.T) {
 	})
 
 	m.talk(ctx, s, msg)
+	select {
+	case <-s.delivered:
+	case <-time.After(time.Second):
+		t.Fatal("agent response timed out")
+	}
 
 	if !fa.called {
 		t.Fatal("expected fakeAgents.Talk to be invoked")

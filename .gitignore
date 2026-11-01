@@ -20,3 +20,7 @@ temp/
 /.cache/
 /bin/
 *.exe
+
+# Preview fixtures and procedural generation intermediates
+.preview-data/
+world_source/.build/

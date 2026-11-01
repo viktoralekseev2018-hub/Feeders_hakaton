@@ -1,265 +1,112 @@
-// Package main - cmd/mcp-tools/main.go
-// Реализация MCP (Model Context Protocol) сервера для инструментов станции «Гелиос-7».
-// Предоставляет инструменты поиска по базе знаний (search_knowledge) и расчёта распределения энергии.
+// mcp-tools is launched as a child process by an MCP client. Stdout is JSON-RPC only.
 package main
 
 import (
-	"bufio"
+	"bytes"
+	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
-	"math"
+	"net/http"
+	"net/url"
 	"os"
 	"strings"
+	"time"
 
-	"feeders/internal/agents"
+	"feeders/internal/game"
+	"feeders/internal/knowledge"
+	"feeders/internal/mcp"
+	"feeders/internal/mission"
+	"feeders/internal/rag"
 )
 
-type MCPRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      any             `json:"id"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params,omitempty"`
-}
-
-type MCPResponse struct {
-	JSONRPC string `json:"jsonrpc"`
-	ID      any    `json:"id"`
-	Result  any    `json:"result,omitempty"`
-	Error   any    `json:"error,omitempty"`
-}
-
-type CallToolParams struct {
-	Name      string         `json:"name"`
-	Arguments map[string]any `json:"arguments"`
-}
-
 func main() {
-	reader := bufio.NewReader(os.Stdin)
-	for {
-		line, err := reader.ReadBytes('\n')
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			fmt.Fprintf(os.Stderr, "read error: %v\n", err)
-			break
-		}
-
-		line = []byte(strings.TrimSpace(string(line)))
-		if len(line) == 0 {
-			continue
-		}
-
-		var req MCPRequest
-		if err := json.Unmarshal(line, &req); err != nil {
-			sendError(req.ID, -32700, "Parse error")
-			continue
-		}
-
-		handleRequest(req)
+	defaultPath := os.Getenv("RAG_CHUNKS_FILE")
+	if defaultPath == "" {
+		defaultPath = "knowledge"
 	}
-}
+	path := flag.String("chunks", defaultPath, "JSONL corpus path; missing file means empty corpus")
+	check := flag.Bool("check", false, "validate corpus and print status without starting MCP")
+	exportTools := flag.Bool("export-tools", false, "print tool definitions as JSON and exit")
+	missionFile := flag.String("mission-file", "", "read-only authoritative mission.json from game host")
+	playerID := flag.String("player-id", "", "trusted actor binding, required with -view-file or -mission-file")
+	viewFile := flag.String("view-file", "", "read-only crew-view.json projection from the current game host")
+	flag.Parse()
+	s, err := rag.Load(*path)
+	if err == nil {
+		c := knowledge.Catalog{Store: s}
+		endpoint, key := os.Getenv("MCP_WORLD_URL"), os.Getenv("MCP_WORLD_TOKEN")
+		if endpoint != "" && key != "" && *playerID != "" {
+			u, e := url.Parse(endpoint)
+			if e != nil || u.Scheme != "http" || (u.Hostname() != "127.0.0.1" && u.Hostname() != "::1") {
+				fmt.Fprintln(os.Stderr, "MCP world endpoint must be loopback")
+				os.Exit(1)
+			}
+			c.AllowExperiments = true
+			c.StartExperiment = func(ctx context.Context, args json.RawMessage) (any, error) {
+				var p struct {
+					Type string `json:"type"`
+				}
+				if err := json.Unmarshal(args, &p); err != nil {
+					return nil, err
+				}
+				data, _ := json.Marshal(map[string]string{"player": *playerID, "type": p.Type})
+				req, e := http.NewRequestWithContext(ctx, "POST", strings.TrimRight(endpoint, "/")+"/api/internal/experiment", bytes.NewReader(data))
+				if e != nil {
+					return nil, e
+				}
+				req.Header.Set("Authorization", "Bearer "+key)
+				req.Header.Set("Content-Type", "application/json")
+				transport := http.DefaultTransport.(*http.Transport).Clone()
+				transport.Proxy = nil
+				client := &http.Client{Transport: transport, Timeout: 3 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+				res, e := client.Do(req)
+				if e != nil {
+					return nil, e
+				}
+				defer res.Body.Close()
+				if res.StatusCode != 200 {
+					return nil, fmt.Errorf("world tool HTTP %d", res.StatusCode)
+				}
+				var value map[string]any
+				e = json.NewDecoder(io.LimitReader(res.Body, 65536)).Decode(&value)
+				return value, e
+			}
+		}
 
-func handleRequest(req MCPRequest) {
-	switch req.Method {
-	case "initialize":
-		sendResult(req.ID, map[string]any{
-			"protocolVersion": "2024-11-05",
-			"serverInfo": map[string]any{
-				"name":    "helios-station-mcp-tools",
-				"version": "1.0.0",
-			},
-			"capabilities": map[string]any{
-				"tools": map[string]any{},
-			},
-		})
-
-	case "tools/list":
-		sendResult(req.ID, map[string]any{
-			"tools": []map[string]any{
-				{
-					"name":        "search_knowledge",
-					"description": "Поиск по бортовой научной базе знаний станции «Гелиос-7» (термодинамика реактора, гидропоника оранжереи, протоколы выживания).",
-					"inputSchema": map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"agent_id": map[string]any{
-								"type":        "string",
-								"description": "Идентификатор отсека/специалиста: engineer, biologist, captain",
-							},
-							"query": map[string]any{
-								"type":        "string",
-								"description": "Ключевые слова или тема запроса",
-							},
-						},
-						"required": []string{"query"},
-					},
-				},
-				{
-					"name":        "calculate_power_balance",
-					"description": "Расчёт баланса энергосети станции для разрешения дилеммы реактора и оранжереи.",
-					"inputSchema": map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"pulse_cooling_enabled": map[string]any{
-								"type":        "boolean",
-								"description": "Включен ли импульсный режим 2 Гц для реактора",
-							},
-							"night_mode_enabled": map[string]any{
-								"type":        "boolean",
-								"description": "Включен ли анаэробный ночной режим 430 нм для оранжереи",
-							},
-						},
-					},
-				},
-				{
-					"name":        "start_experiment",
-					"description": "Запуск совместного физического эксперимента релятивистских световых часов на станции «Гелиос-7».",
-					"inputSchema": map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"velocity": map[string]any{
-								"type":        "number",
-								"description": "Скорость субсветового маневра станции в долях скорости света (0.0 .. 0.8c)",
-							},
-							"role": map[string]any{
-								"type":        "string",
-								"description": "Роль наблюдателя: station_observer (на станции) или lab_observer (в лаборатории)",
-							},
-						},
-						"required": []string{"velocity"},
-					},
-				},
-			},
-		})
-
-	case "tools/call":
-		var params CallToolParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
-			sendError(req.ID, -32602, "Invalid params")
+		if *viewFile != "" {
+			c.ScenarioOverride = game.CallCrewTool
+		}
+		if ((*missionFile == "" && *viewFile == "") != (*playerID == "")) || (*missionFile != "" && *viewFile != "") {
+			fmt.Fprintln(os.Stderr, "use -player-id with exactly one of -view-file or -mission-file")
+			os.Exit(1)
+		}
+		if *missionFile != "" {
+			c.ViewProvider = func(context.Context) (mission.View, error) { return mission.ReadView(*missionFile, *playerID) }
+		}
+		if *viewFile != "" {
+			c.ViewProvider = func(context.Context) (mission.View, error) { return game.ReadCrewView(*viewFile, *playerID) }
+		}
+		if *exportTools {
+			fmt.Println(rag.JSON(map[string]any{"tools": c.List()}))
 			return
 		}
-
-		switch params.Name {
-		case "search_knowledge":
-			agentID, _ := params.Arguments["agent_id"].(string)
-			query, _ := params.Arguments["query"].(string)
-			article, found := agents.FindKnowledge(agentID, query)
-			if !found {
-				sendResult(req.ID, map[string]any{
-					"content": []map[string]any{
-						{"type": "text", "text": "Ничего не найдено по данному запросу."},
-					},
-				})
-				return
+		if *check {
+			var status any
+			status, err = c.Call(context.Background(), "rag_status", nil)
+			if data, ok := status.(map[string]any); ok {
+				data["total_loaded_chunks"] = s.Inventory()
 			}
-			sendResult(req.ID, map[string]any{
-				"content": []map[string]any{
-					{
-						"type": "text",
-						"text": fmt.Sprintf("ИСТОЧНИК: %s (%s)\nКРАТКО: %s\nЦИТАТА: %s", article.Title, article.Section, article.Summary, article.FullQuote),
-					},
-				},
-			})
-
-		case "calculate_power_balance":
-			pulse, _ := params.Arguments["pulse_cooling_enabled"].(bool)
-			night, _ := params.Arguments["night_mode_enabled"].(bool)
-
-			reactorMW := 15.0
-			if pulse {
-				reactorMW = 9.0
+			if err == nil {
+				fmt.Println(rag.JSON(status))
 			}
-
-			bioMW := 12.0
-			if night {
-				bioMW = 5.0
-			}
-
-			baseStationMW := 4.0
-			totalMW := reactorMW + bioMW + baseStationMW
-			capacityMW := 20.0
-			surplusMW := capacityMW - totalMW
-			sustainable := surplusMW >= 0
-
-			resultText := fmt.Sprintf(
-				"Потребление: Реактор: %.1f МВт, Оранжерея: %.1f МВт, Системы станции: %.1f МВт. Сумма: %.1f МВт. Резерв: %.1f МВт. Баланс: %s",
-				reactorMW, bioMW, baseStationMW, totalMW, capacityMW,
-				map[bool]string{true: "СТАБИЛЬНО (Станция спасена!)", false: "КРИТИЧЕСКИЙ ПЕРЕРАСХОД (Коллапс сети)"}[sustainable],
-			)
-
-			sendResult(req.ID, map[string]any{
-				"content": []map[string]any{
-					{"type": "text", "text": resultText},
-				},
-			})
-
-		case "start_experiment":
-			vRaw, ok := params.Arguments["velocity"].(float64)
-			if !ok {
-				vRaw = 0.6
-			}
-			if vRaw < 0.0 {
-				vRaw = 0.0
-			}
-			if vRaw > 0.8 {
-				vRaw = 0.8
-			}
-
-			role, _ := params.Arguments["role"].(string)
-			if role == "" {
-				role = "station_observer"
-			}
-
-			// Релятивистский фактор Лоренца: gamma = 1 / sqrt(1 - v^2/c^2)
-			gamma := 1.0 / math.Sqrt(1.0-vRaw*vRaw)
-			dilationPercent := (gamma - 1.0) * 100.0
-
-			summary := fmt.Sprintf(
-				"Эксперимент световых часов запущен: скорость v = %.2fc, фактор Лоренца γ = %.4f. Замедление хода бортовых часов: +%.1f%% относительно неподвижного наблюдателя (роль: %s).",
-				vRaw, gamma, dilationPercent, role,
-			)
-
-			sendResult(req.ID, map[string]any{
-				"content": []map[string]any{
-					{"type": "text", "text": summary},
-				},
-				"data": map[string]any{
-					"velocity": vRaw,
-					"gamma":    gamma,
-					"role":     role,
-				},
-			})
-
-		default:
-			sendError(req.ID, -32601, "Tool not found")
+		} else {
+			err = mcp.Serve(context.Background(), os.Stdin, os.Stdout, c)
 		}
-
-	default:
-		sendError(req.ID, -32601, "Method not found")
 	}
-}
-
-func sendResult(id any, result any) {
-	resp := MCPResponse{
-		JSONRPC: "2.0",
-		ID:      id,
-		Result:  result,
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "chronograd-rag:", err)
+		os.Exit(1)
 	}
-	b, _ := json.Marshal(resp)
-	fmt.Println(string(b))
-}
-
-func sendError(id any, code int, message string) {
-	resp := MCPResponse{
-		JSONRPC: "2.0",
-		ID:      id,
-		Error: map[string]any{
-			"code":    code,
-			"message": message,
-		},
-	}
-	b, _ := json.Marshal(resp)
-	fmt.Println(string(b))
 }

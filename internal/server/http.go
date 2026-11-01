@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -14,6 +15,29 @@ type Routes interface{ RegisterRoutes(*http.ServeMux) }
 func New(files fs.FS, modules ...Routes) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { JSON(w, 200, map[string]string{"status": "ok"}) })
+	mux.HandleFunc("GET /api/host", func(w http.ResponseWriter, r *http.Request) {
+		_, port, err := net.SplitHostPort(r.Host)
+		if err != nil {
+			port = "80"
+			if r.TLS != nil {
+				port = "443"
+			}
+		}
+		scheme := "http://"
+		if r.TLS != nil {
+			scheme = "https://"
+		}
+		urls := []string{}
+		if addresses, err := net.InterfaceAddrs(); err == nil {
+			for _, a := range addresses {
+				ip, _, err := net.ParseCIDR(a.String())
+				if err == nil && ip.To4() != nil && ip.IsPrivate() {
+					urls = append(urls, scheme+net.JoinHostPort(ip.String(), port))
+				}
+			}
+		}
+		JSON(w, 200, map[string]any{"urls": urls})
+	})
 	for _, module := range modules {
 		module.RegisterRoutes(mux)
 	}

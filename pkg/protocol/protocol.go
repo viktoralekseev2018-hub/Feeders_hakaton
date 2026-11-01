@@ -98,53 +98,45 @@ type WorldSnapshot struct {
 
 // Citation represents a verified source citation from the station knowledge base.
 type Citation struct {
-	SourceTitle string `json:"source_title"`
-	Section     string `json:"section"`
-	Excerpt     string `json:"excerpt"`
-	Confidence  string `json:"confidence"`
+	SourceURL        string `json:"source_url,omitempty"`
+	DocumentID       string `json:"document_id,omitempty"`
+	ContentMode      string `json:"content_mode,omitempty"`
+	RelationToPerson string `json:"relation_to_person,omitempty"`
+	SourceTitle      string `json:"source_title"`
+	Section          string `json:"section"`
+	Excerpt          string `json:"excerpt"`
+	Confidence       string `json:"confidence"`
 }
 
 // AgentTalkRequest is sent by the client when communicating with a crew member.
 type AgentTalkRequest struct {
-	PlayerID string `json:"player_id,omitempty"`
-	AgentID  string `json:"agent_id"`
-	Text     string `json:"text"`
+	AgentID string `json:"agent_id"`
+	Text    string `json:"text"`
 }
 
 // AgentReply is sent by the server with the AI's response and source citations.
 type AgentReply struct {
-	AgentID   string    `json:"agent_id"`
-	AgentName string    `json:"agent_name"`
-	Text      string    `json:"text"`
-	Citation  *Citation `json:"citation,omitempty"`
+	ToolTransport string          `json:"tool_transport,omitempty"`
+	AgentID       string          `json:"agent_id"`
+	AgentName     string          `json:"agent_name"`
+	Text          string          `json:"text"`
+	Citation      *Citation       `json:"citation,omitempty"`
+	Citations     []Citation      `json:"citations,omitempty"`
+	Mode          string          `json:"mode,omitempty"`
+	Evidence      json.RawMessage `json:"evidence,omitempty"`
+	Analysis      json.RawMessage `json:"analysis,omitempty"`
 }
 
 // GameActionRequest is sent by the client to propose or execute a cycle operation.
 type GameActionRequest struct {
-	Action string `json:"action"`
+	Action          string `json:"action"`
+	ExpectedVersion uint64 `json:"expected_version,omitempty"`
 }
 
 // InvestigationSolveRequest is sent by the client to submit 3 clues.
 type InvestigationSolveRequest struct {
-	Clues []string `json:"clues"`
-}
-
-// Stage 5: Relativistic light-clock experiment request.
-type ExperimentUpdateRequest struct {
-	Velocity float64 `json:"velocity"`
-	Role     string  `json:"role,omitempty"`
-}
-
-// Stage 6: Recording player learning predictions and mistakes.
-type RecordMistakeRequest struct {
-	Topic    string `json:"topic"`
-	Forecast string `json:"forecast"`
-	Actual   string `json:"actual"`
-}
-
-// Stage 7: Historical quest submission separating quotes from assumptions.
-type HistoryQuestSubmitRequest struct {
-	Answers map[string]string `json:"answers"` // card_id -> "quote" | "assumption"
+	Clues           []string `json:"clues"`
+	ExpectedVersion uint64   `json:"expected_version,omitempty"`
 }
 
 func Message(kind, requestID string, payload any) (Envelope, error) {

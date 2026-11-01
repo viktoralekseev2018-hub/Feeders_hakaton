@@ -2,9 +2,11 @@ package auth
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -42,7 +44,11 @@ func New(accounts storage.Accounts, ttl time.Duration, secure bool, log *slog.Lo
 	if err != nil {
 		return nil, err
 	}
-	return &Handler{accounts: accounts, log: log, ttl: ttl, secure: secure, sessions: make(map[string]session), work: make(chan struct{}, 4), dummyHash: hash}, nil
+	h := &Handler{accounts: accounts, log: log, ttl: ttl, secure: secure, sessions: make(map[string]session), work: make(chan struct{}, 4), dummyHash: hash}
+	if err := h.restoreSessions(); err != nil {
+		return nil, err
+	}
+	return h, nil
 }
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
@@ -180,9 +186,13 @@ func (h *Handler) issue(w http.ResponseWriter, r *http.Request, u model.User) er
 		}
 	}
 	if old, err := r.Cookie(CookieName); err == nil {
-		delete(h.sessions, old.Value)
+		delete(h.sessions, sessionKey(old.Value))
 	}
-	h.sessions[id] = session{u, expires}
+	h.sessions[sessionKey(id)] = session{u, expires}
+	if err := h.persistSessionsLocked(); err != nil {
+		h.mu.Unlock()
+		return err
+	}
 	h.mu.Unlock()
 	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: id, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: h.secure, MaxAge: int(h.ttl.Seconds()), Expires: expires})
 	return nil
@@ -196,9 +206,9 @@ func (h *Handler) Resolve(r *http.Request) (model.User, bool) {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	s, ok := h.sessions[cookie.Value]
+	s, ok := h.sessions[sessionKey(cookie.Value)]
 	if ok && !time.Now().Before(s.expires) {
-		delete(h.sessions, cookie.Value)
+		delete(h.sessions, sessionKey(cookie.Value))
 		ok = false
 	}
 	return s.user, ok
@@ -207,7 +217,12 @@ func (h *Handler) Resolve(r *http.Request) (model.User, bool) {
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(CookieName); err == nil {
 		h.mu.Lock()
-		delete(h.sessions, cookie.Value)
+		delete(h.sessions, sessionKey(cookie.Value))
+		if err := h.persistSessionsLocked(); err != nil {
+			h.mu.Unlock()
+			h.internal(w, err)
+			return
+		}
 		h.mu.Unlock()
 	}
 	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: h.secure, MaxAge: -1})
@@ -235,4 +250,38 @@ func respond(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
+}
+
+type savedSession struct {
+	User    model.User `json:"user"`
+	Expires time.Time  `json:"expires"`
+}
+
+func sessionKey(token string) string { return fmt.Sprintf("%x", sha256.Sum256([]byte(token))) }
+func (h *Handler) restoreSessions() error {
+	store, ok := h.accounts.(storage.StateStore)
+	if !ok {
+		return nil
+	}
+	rows := map[string]savedSession{}
+	if err := store.LoadState("sessions_v1", &rows); err != nil && !errors.Is(err, storage.ErrNotFound) {
+		return err
+	}
+	for key, row := range rows {
+		if time.Now().Before(row.Expires) {
+			h.sessions[key] = session{row.User, row.Expires}
+		}
+	}
+	return nil
+}
+func (h *Handler) persistSessionsLocked() error {
+	store, ok := h.accounts.(storage.StateStore)
+	if !ok {
+		return nil
+	}
+	rows := map[string]savedSession{}
+	for key, row := range h.sessions {
+		rows[key] = savedSession{row.user, row.expires}
+	}
+	return store.SaveState("sessions_v1", rows)
 }

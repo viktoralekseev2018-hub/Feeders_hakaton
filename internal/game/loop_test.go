@@ -194,3 +194,27 @@ func TestPersistenceManagerAutoSaveAndSpawn(t *testing.T) {
 		t.Fatalf("expected restored position X=-14.0, got: %+v", restoredState.Position)
 	}
 }
+
+func TestMovementBudgetRejectsRepeatedSmallTeleports(t *testing.T) {
+	repo, err := storage.NewFileStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := NewServerLoop(repo, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctx := context.Background()
+	u := model.User{ID: "budget", Username: "pilot"}
+	l.Join(ctx, u, model.PlayerState{PlayerID: u.ID, Position: model.Position{Y: 1.7}})
+	if err := l.Input(ctx, u.ID, protocol.PlayerInput{Seq: 1, X: 1, Y: 1.7}); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Input(ctx, u.ID, protocol.PlayerInput{Seq: 2, X: 2, Y: 1.7}); err == nil {
+		t.Fatal("repeated small teleport bypassed speed validation")
+	}
+	if err := l.Leave(ctx, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	s, err := repo.LoadPlayer(ctx, u.ID)
+	if err != nil || s.Position.X != 1 {
+		t.Fatalf("rejected coordinates saved: %+v %v", s, err)
+	}
+}

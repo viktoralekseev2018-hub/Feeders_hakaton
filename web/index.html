@@ -1,132 +1,64 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>«Последний экипаж» (ХроноГрад) — Научно-образовательная космическая станция</title>
-    <meta name="application-name" content="ХроноГрад">
-    <link rel="stylesheet" href="/css/style.css">
-    
-    <!-- Нативный браузерный Import Map для Three.js без внешних сборщиков -->
-    <script type="importmap">
-    {
-        "imports": {
-            "three": "/vendor/three.module.js",
-            "three/addons/": "/vendor/"
-        }
-    }
-    </script>
-</head>
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080e12"><title>Последний экипаж · Горизонт–7</title><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpath d='M8 27 20 7l12 20-12 7Z' fill='none' stroke='%237de9b8' stroke-width='2'/%3E%3C/svg%3E"><link rel="stylesheet" href="/css/style.css"><link rel="stylesheet" href="/css/flight-deck.css"><script type="importmap">{"imports":{"three":"/vendor/three.module.js","three/addons/":"/vendor/"}}</script></head>
 <body>
-    <!-- Холст Three.js WebGL -->
-    <canvas id="webgl-canvas"></canvas>
-
-    <!-- Прицел от первого лица -->
-    <div id="crosshair"></div>
-
-    <!-- UI контейнер поверх 3D -->
-    <div id="ui-container">
-        
-        <!-- Баннер тревоги / Авто-переподключение при обрыве связи -->
-        <div id="connection-alert-banner" class="connection-alert-banner hidden">
-            <div class="alert-content">
-                <span class="alert-icon">⚠️</span>
-                <div class="alert-text">
-                    <div class="alert-title">СВЯЗЬ С СЕРВЕРОМ СТАНЦИИ ПОТЕРЯНА</div>
-                    <div class="alert-sub" id="reconnect-status-text">Авто-переподключение...</div>
-                </div>
-                <button class="reconnect-btn" id="reconnect-now-btn">Повторить сейчас</button>
-            </div>
-        </div>
-
-        <!-- HUD Панель (Левый верхний угол) -->
-        <div id="hud-overlay">
-            <div class="hud-pill" id="lan-status-pill">
-                <span class="status-dot" id="lan-status-dot"></span>
-                <span id="lan-status-text">LAN: Оффлайн</span>
-            </div>
-            <div class="hud-pill" id="player-info-pill" style="display: none;">
-                <span>Экипаж: <b id="hud-username">Гость</b></span>
-            </div>
-            <div class="hud-pill" id="pos-info-pill" style="display: none;">
-                <span id="hud-coords">X: 0.0 | Y: 1.7 | Z: 0.0</span>
-            </div>
-        </div>
-
-        <!-- Телеметрия состояния космического корабля «Горизонт-7» -->
-        <div id="station-telemetry-hud" class="station-telemetry-hud" style="display: none;">
-            <div class="telemetry-header">
-                <span class="telemetry-station-name">КОРАБЛЬ «ГОРИЗОНТ-7»</span>
-                <span class="telemetry-blink">ТРЕВОГА</span>
-            </div>
-            <div class="telemetry-row">
-                <span class="t-label">O2 (Кислород):</span>
-                <div class="t-bar-bg"><div class="t-bar-fill o2" style="width: 64%;"></div></div>
-                <span class="t-val">64%</span>
-            </div>
-            <div class="telemetry-row">
-                <span class="t-label">Энергия сети:</span>
-                <div class="t-bar-bg"><div class="t-bar-fill power" style="width: 35%;"></div></div>
-                <span class="t-val">35%</span>
-            </div>
-            <div class="telemetry-row">
-                <span class="t-label">Целостность:</span>
-                <div class="t-bar-bg"><div class="t-bar-fill hull" style="width: 70%;"></div></div>
-                <span class="t-val">70%</span>
-            </div>
-        </div>
-
-        <!-- Плавающая подсказка взаимодействия (Proximity Pill) -->
-        <div id="interaction-pill" class="interaction-pill hidden">
-            <kbd class="key-e">E</kbd>
-            <span id="interaction-label">Взаимодействовать</span>
-        </div>
-
-        <!-- Подсказка по управлению -->
-        <div id="controls-hint" style="display: none;"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Движение | <kbd>Мышь</kbd> Обзор | <kbd>Shift</kbd> Бег | <kbd>E</kbd> Действие/Диалог | <kbd>P</kbd> Паспорт | <kbd>C</kbd> Пульт [C] | <kbd>I</kbd> Улики [I] | Клик для захвата</div>
-
-        <!-- Экран входа / Авторизации члена экипажа -->
-        <div class="modal-overlay" id="auth-modal">
-            <div class="auth-card">
-                <span class="brand-badge">Корабль «Горизонт-7»</span>
-                <h1 class="auth-title">Последний экипаж</h1>
-                <p class="auth-subtitle">Связи с Землёй нет. Исследуй отсеки, восстанови энергию, спаси биосферу.</p>
-
-                <div class="tab-switcher">
-                    <button class="tab-btn active" id="tab-login-btn">Вход в систему</button>
-                    <button class="tab-btn" id="tab-register-btn">Регистрация в журнале</button>
-                </div>
-
-                <form class="auth-form" id="auth-form" onsubmit="return false;">
-                    <div class="input-group">
-                        <label for="auth-username">Позывной исследователя (Никнейм)</label>
-                        <input type="text" id="auth-username" placeholder="Например: AstroPioneer" required autocomplete="username">
-                    </div>
-                    
-                    <div class="input-group">
-                        <label for="auth-password">Код доступа (Пароль)</label>
-                        <input type="password" id="auth-password" placeholder="••••••••" required autocomplete="current-password">
-                    </div>
-
-                    <button type="submit" class="submit-btn" id="auth-submit-btn">Пробуждение в отсеке</button>
-                    
-                    <div class="auth-feedback" id="auth-feedback"></div>
-                </form>
-            </div>
-        </div>
-
-        <!-- Эффект плавного пробуждения из криокапсулы (Awakening Transition) -->
-        <div id="awakening-overlay" class="awakening-overlay hidden">
-            <div class="awakening-box">
-                <div class="awakening-pulse"></div>
-                <h2>ПРОБУЖДЕНИЕ В КРИОКАПСУЛЕ...</h2>
-                <p>Нейроинтерфейс подключен. Системы жизнеобеспечения онлайн.</p>
-            </div>
-        </div>
-
-    </div>
-
-    <!-- Главная точка входа клиентского приложения -->
-    <script type="module" src="/src/main.js"></script>
-</body>
-</html>
+<a class="skip-link" href="#auth-form">Перейти к форме</a>
+<section id="auth-screen" class="auth-screen">
+ <header class="entry-header">
+  <a class="wordmark" href="/" aria-label="Последний экипаж — главная"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M8 27 20 7l12 20-12 7Z"/><path d="M8 27h24M20 7v27"/></svg><span>LAST CREW<small>ПРОТОКОЛ ВЫЖИВАНИЯ</small></span></a>
+  <nav class="entry-nav" aria-label="Об экспедиции"><button id="entry-briefing">О миссии</button><button id="entry-crew">Экипаж корабля</button></nav>
+  <span class="entry-meta"><i class="dot"></i> ЛОКАЛЬНАЯ ЭКСПЕДИЦИЯ</span>
+  <button class="icon-button theme-toggle" aria-label="Настройки оформления" title="Настройки оформления">☷</button>
+ </header>
+ <main class="entry-main">
+  <div class="entry-intro">
+   <div class="signal-tag"><span class="signal-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span> ДАЛЬНИЙ КОСМОС <span>2087 / EUROPA</span></div>
+   <h1>Последний<br>экипаж<span class="accent">.</span></h1>
+   <p class="entry-lead">Связь с Землёй потеряна.<br>Друг с другом — ещё нет.</p>
+   <p class="entry-description">Четыре специалиста. Повреждённый корабль.<br>Восемь циклов, чтобы найти путь домой.</p>
+   <div class="entry-tags"><span><i class="dot"></i> 1–4 игрока</span><span>Общий мир</span><span>Работает в LAN</span></div>
+   <div class="vessel-card" aria-label="Схема корабля Горизонт–7">
+    <div class="vessel-heading"><span class="micro">HORIZON–7 / DECK 01</span><span class="signal-lost">● СИГНАЛ ПОТЕРЯН</span></div>
+    <svg class="vessel-schematic" viewBox="0 0 620 210" role="img" aria-label="План палубы: криоотсек слева, мостик в центре, реактор справа, оранжерея сверху">
+     <defs><pattern id="deck-grid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" fill="none" stroke="currentColor" stroke-opacity=".12"/></pattern><linearGradient id="deck-light"><stop stop-color="#7ee2d3" stop-opacity=".2"/><stop offset="1" stop-color="#7ee2d3" stop-opacity=".02"/></linearGradient></defs>
+     <rect width="620" height="210" fill="url(#deck-grid)"/>
+     <g fill="none" stroke="currentColor" stroke-width="1"><path d="M40 128H580M310 26V186" stroke-dasharray="3 7" opacity=".25"/><path d="M78 94 101 77H215V112H252V82H280V30H340V82H368V112H405V77H511L542 94V161L511 180H405V146H368V180H252V146H215V180H101L78 161Z" fill="url(#deck-light)" stroke-opacity=".8"/><path d="M89 98 105 87H205V170H105L89 157ZM263 94H357V168H263ZM415 87H507L531 100V155L507 170H415ZM289 40H331V81" opacity=".38"/><path d="M215 122H252M215 135H252M368 122H405M368 135H405" stroke-width="3" opacity=".5"/>
+     <g opacity=".7"><rect x="107" y="101" width="19" height="49" rx="8"/><rect x="138" y="101" width="19" height="49" rx="8"/><rect x="169" y="101" width="19" height="49" rx="8"/><path d="M282 111H338V146H282Z M285 158H335 M298 121H322V136H298"/><circle cx="471" cy="128" r="28"/><circle cx="471" cy="128" r="16"/><path d="m446 103 50 50m-50 0 50-50M298 48V73M310 48V73M322 48V73"/></g></g>
+     <g fill="currentColor" font-family="monospace" font-size="10" letter-spacing="1.2"><text x="91" y="66">01 / CRYO</text><text x="260" y="198">02 / BRIDGE</text><text x="418" y="66">03 / REACTOR</text><text x="354" y="56">04 / BIO</text></g><g fill="#e8b775"><circle cx="471" cy="128" r="4"/><circle cx="310" cy="128" r="3"/></g>
+    </svg>
+    <div class="vessel-footer"><span>ИССЛЕДОВАТЕЛЬСКИЙ КОРАБЛЬ</span><strong>«Горизонт–7»</strong><span class="vessel-coord">JOVIAN SECTOR</span></div>
+   </div>
+   <div class="entry-chapters"><span><b>01</b> Исследуйте</span><i></i><span><b>02</b> Объединяйтесь</span><i></i><span><b>03</b> Спасайте</span></div>
+  </div>
+  <div class="auth-column">
+   <div class="auth-card">
+    <div class="auth-code"><span class="eyebrow" id="auth-code">01 / CREW ACCESS</span><span class="auth-emblem" aria-hidden="true">⌑</span></div>
+    <div class="auth-tabs" role="group" aria-label="Режим доступа"><button type="button" id="auth-login-tab" aria-pressed="true">Вход</button><button type="button" id="auth-register-tab" aria-pressed="false">Регистрация</button></div>
+    <h2 id="auth-title">Вернуться на борт</h2>
+    <p id="auth-subtitle">Ваша экспедиция ждёт. Войдите, чтобы продолжить с места остановки.</p>
+    <form id="auth-form" novalidate>
+     <div class="form-field"><label for="username">Позывной <span>CREW ID</span></label><div class="input-shell"><span aria-hidden="true">⌁</span><input id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="Например, voyager" minlength="3" maxlength="32" required aria-describedby="username-help username-error"></div><small id="username-help">3–32 буквы, цифры, дефис или подчёркивание</small><span id="username-error" class="field-error" aria-live="polite"></span></div>
+     <div class="form-field"><label for="password">Пароль <span id="password-label-hint">ДОСТУП К КОРАБЛЮ</span></label><div class="password-wrap input-shell"><span aria-hidden="true">⌑</span><input id="password" name="password" type="password" autocomplete="current-password" placeholder="Ваш пароль" required aria-describedby="password-error caps-warning"><button type="button" id="password-toggle" aria-label="Показать пароль" aria-pressed="false">◉</button></div><span id="password-error" class="field-error" aria-live="polite"></span><small id="caps-warning" class="warning" hidden>Включён Caps Lock</small></div>
+     <div id="password-strength" class="password-strength" hidden><div aria-hidden="true"><i></i><i></i><i></i><i></i></div><small id="strength-caption">Используйте длинный пароль из нескольких слов</small></div>
+     <div id="confirm-field" class="form-field" hidden><label for="password-confirm">Повторите пароль <span>ПРОВЕРКА</span></label><div class="input-shell"><span aria-hidden="true">⌑</span><input id="password-confirm" name="password-confirm" type="password" autocomplete="new-password" placeholder="Ещё раз, без опечаток" aria-describedby="password-confirm-error"></div><span id="password-confirm-error" class="field-error" aria-live="polite"></span></div>
+     <p id="auth-error" class="error" role="alert"></p>
+     <button id="auth-submit" class="primary wide" type="submit"><span>ВОЙТИ НА КОРАБЛЬ</span><span>↗</span></button>
+    </form>
+    <div class="auth-switch-row"><span id="auth-switch-caption">Первая экспедиция?</span><button id="auth-switch" class="text-button">Создать аккаунт ↗</button></div>
+    <div class="auth-foot"><span class="shield-symbol" aria-hidden="true">◇</span><span>Почта не нужна. Аккаунт и прогресс сохраняются на сервере вашей экспедиции.</span></div>
+   </div>
+   <div class="access-note"><span class="micro">АСТРА / БОРТОВОЙ ИНТЕЛЛЕКТ</span><p>«Корабль можно восстановить.<br>Главное — действовать вместе».</p><span class="audio-line" aria-hidden="true">▁ ▂ ▄ ▆ ▃ ▂ ▁ ▃ ▅ ▂ ▁</span></div>
+  </div>
+ </main>
+ <footer class="entry-footer"><span><i class="dot"></i> HORIZON–7 · SURVIVAL PROTOCOL</span><span>НАУКА · ВЗАИМОПОМОЩЬ · ИССЛЕДОВАНИЕ</span><button id="entry-controls">Управление и помощь ↗</button></footer>
+</section>
+<div id="application" class="application" hidden>
+<header class="game-header"><a class="wordmark" href="/"><svg viewBox="0 0 40 40"><path d="M8 27 20 7l12 20-12 7Z"/><path d="M8 27h24M20 7v27"/></svg><span>LAST CREW<small>ГОРИЗОНТ–7</small></span></a><span class="header-divider"></span><button id="room-info" class="room-badge">ЭКСПЕДИЦИЯ <span id="room-code">—</span><span>↗</span></button><span id="connection" class="connection"><i class="dot"></i> Подключение…</span><div class="header-actions"><button id="invite" class="secondary small">Пригласить ↗</button><button id="fullscreen" class="icon-button" aria-label="На весь экран" title="На весь экран">⛶<span class="fullscreen-label">На весь экран</span></button><button id="settings-button" class="icon-button" aria-label="Настройки интерфейса" title="Настройки">☷</button><button id="help-button" class="icon-button" aria-label="Как играть">?</button><button id="logout" class="user-button" aria-label="Выйти из аккаунта"><span id="user-avatar" class="avatar">Э</span><span id="user-name"></span><span>↪</span></button></div></header>
+<main id="game-stage" class="game-stage"><div id="viewport" class="viewport"><canvas id="webgl-canvas" aria-label="Трёхмерный корабль Горизонт–7"></canvas><div id="scene-fallback" hidden>3D недоступно. Можно продолжать через бортовой пульт.</div><div id="crosshair">+</div><div id="network-cover" hidden><div class="connection-pulse"></div><h2>Восстанавливаем связь</h2><p>Команды приостановлены. Уже выполненные операции не повторятся.</p><button id="retry" class="secondary">Подключиться сейчас</button></div></div>
+<div class="mission-top"><span class="micro mission-name">ПРОТОКОЛ ВЫЖИВАНИЯ<span id="scene-status">Пробуждение экипажа</span></span><div class="resource"><span>O₂ <small>КИСЛОРОД</small></span><b id="oxygen">—</b><div class="meter"><i id="oxygen-bar"></i></div></div><div class="resource amber"><span>ϟ <small>ЭНЕРГИЯ</small></span><b id="energy">—</b><div class="meter"><i id="energy-bar"></i></div></div><div class="resource blue"><span>◇ <small>КОРПУС</small></span><b id="hull">—</b><div class="meter"><i id="hull-bar"></i></div></div><div class="cycle"><small>ЦИКЛ</small><b id="cycle">—</b><span>/ 08</span></div></div>
+<div class="left-console"><aside class="mission-card glass"><button id="collapse-quest" class="collapse-quest" aria-label="Свернуть задачу" aria-expanded="true">−</button><div class="panel-eyebrow"><span>АКТИВНАЯ ЗАДАЧА</span><span id="quest-number">01 / 05</span></div><h2 id="quest-title">Оценить повреждения</h2><p id="quest-description">Проверьте состояние корабля и обсудите план с экипажем.</p><div id="quest-checklist" class="quest-checklist"></div><button id="quest-action" class="task-link">Открыть бортовой пульт <span>↗</span></button><div class="quest-progress" id="quest-progress"></div><div class="task-advice"><i class="dot"></i><span>Обсуждение не расходует цикл</span></div></aside><aside class="deck-map glass" aria-label="Навигация по кораблю"><div class="panel-eyebrow"><span>ПАЛУБА 01</span><span>НАВИГАЦИЯ</span></div><div class="deck-grid"><button data-room="bio" class="deck-bio"><span>04</span>Оранжерея<i id="map-bio-status"></i></button><button data-room="cryo" class="deck-cryo"><span>01</span>Криоотсек</button><button data-room="bridge" class="deck-bridge"><span>02</span>Мостик</button><button data-room="reactor" class="deck-reactor"><span>03</span>Реактор<i id="map-reactor-status"></i></button></div><p><i class="dot"></i><span id="location-label">Вы на борту</span></p></aside></div>
+<aside id="comms-panel" class="comms-panel glass"><div class="comms-tabs"><button class="active" data-chat="npc">Наставник</button><button data-chat="team">Экипаж <span id="team-count">1</span></button><button id="close-comms" class="icon-button" aria-label="Свернуть связь">−</button></div><div id="npc-profile" class="npc-profile"><div class="npc-avatar" id="agent-initials">ВС</div><div><select id="agent-select" aria-label="Выбрать наставника"><option value="savinykh">Виктор Савиных</option><option value="dzhanibekov">Владимир Джанибеков</option><option value="ryazansky">Сергей Рязанский</option><option value="krikalev">Сергей Крикалёв</option></select><p id="agent-role">Капитан · мостик</p></div><button id="focus-agent" class="icon-button" title="Найти в 3D" aria-label="Найти наставника в 3D">◎</button></div><div class="chat-mode" id="chat-mode"><i class="dot"></i> Локальная база знаний</div><div id="chat" class="chat" role="log" aria-label="Диалог с наставником"></div><div class="chat-bottom"><div id="suggestions" class="suggestions"><button data-question="Сравни планы спасения">Планы спасения</button><button data-question="Покажи опыт со световыми часами">Покажи опыт</button><button data-question="Объясни проще">Проще</button><button data-question="Что делать дальше после моей операции?">Что дальше?</button></div><form id="chat-form"><label class="sr-only" for="chat-input">Сообщение</label><textarea id="chat-input" rows="2" maxlength="800" placeholder="Спросить наставника…"></textarea><button id="chat-send" aria-label="Отправить сообщение" type="submit">↑</button></form><span id="chat-foot">Источники доступны без интернета</span></div></aside>
+<div class="scene-tools"><div class="segmented"><button id="overview-view" class="selected">◈ Обзор</button><button id="explore-view">↗ Исследовать</button></div><button id="toggle-comms" class="secondary small">Связь <span>⌁</span></button><button id="lab-button" class="secondary small">Лаборатория ◈</button><button id="toggle-hud" class="icon-button" title="Скрыть панели" aria-label="Скрыть панели">▣</button></div><div id="interaction-hint" class="interaction-hint"><kbd>E</kbd><span>Подойдите к наставнику</span></div>
+<nav class="control-dock glass" aria-label="Управление кораблём"><button id="operations-button" class="dock-main"><span>ϟ</span> Операции <small>C</small></button><button id="journal-button"><span>▤</span> Журнал</button><button id="crew-button"><span>♧</span> Экипаж</button><button id="investigation-button"><span>⌕</span> Расследование</button><div class="dock-divider"></div><button data-room="cryo">Криоотсек</button><button data-room="bridge">Мостик</button><button data-room="reactor">Реактор</button><button data-room="bio">Оранжерея</button></nav>
+<div class="stage-footer"><span id="crew-count"><i class="dot"></i> Участники экспедиции</span><span class="control-hint">WASD · движение <b>/</b> E · разговор <b>/</b> Esc · курсор</span><span id="latency">— мс</span></div><div id="decision-banner" class="decision-banner glass" hidden></div></main></div>
+<section id="lobby-screen" class="lobby-screen" hidden><div class="lobby-content"><div class="lobby-steps" aria-label="Этапы подготовки"><span class="complete">01 <b>Авторизация</b></span><i></i><span id="step-room" class="current">02 <b>Экспедиция</b></span><i></i><span id="step-role">03 <b>Выбор роли</b></span><i></i><span id="step-start">04 <b>На борт</b></span></div><div class="eyebrow">ПОДГОТОВКА ЭКСПЕДИЦИИ</div><h1 id="lobby-title">Соберите свой экипаж<span class="accent">_</span></h1><p id="lobby-lead">Создайте комнату или присоединитесь к друзьям по коду.</p><div id="lobby-content"></div><p id="lobby-error" class="error" role="alert"></p><button id="lobby-back" class="text-button">← Выйти из аккаунта</button></div></section>
+<dialog id="action-dialog" aria-label="Бортовая панель"><button id="dialog-close" class="close-dialog" aria-label="Закрыть">×</button><div id="dialog-content"></div></dialog><div id="toast" role="status" aria-live="polite" hidden></div><script type="module" src="/src/main.js"></script></body></html>

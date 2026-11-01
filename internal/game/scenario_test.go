@@ -81,3 +81,20 @@ func TestScenarioControlWalkthrough(t *testing.T) {
 		t.Fatalf("cycle 7 final mismatch: O=%d, E=%d, H=%d, victory=%v, type=%s", s.Oxygen, s.Energy, s.Hull, s.Victory, s.VictoryType)
 	}
 }
+
+func TestInvestigationRequiresDiscoveredClues(t *testing.T) {
+	e := NewScenarioEngine()
+	clues := []string{"damaged_filter", "impact_mark", "protective_chronology"}
+	if solved, _, err := e.SolveInvestigation(clues); err == nil || solved {
+		t.Fatal("guessed IDs unlocked hidden investigation")
+	}
+	if _, err := e.ExecuteAction("repair_cooling"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.ExecuteAction("restore_archive"); err != nil {
+		t.Fatal(err)
+	}
+	if solved, _, err := e.SolveInvestigation(clues); err != nil || !solved {
+		t.Fatalf("discovered evidence rejected: %v", err)
+	}
+}

@@ -31,6 +31,7 @@ export class PlayerControls {
         this.isLocked = false;
 
         this._initListeners();
+ window.addEventListener('blur',()=>this.resetKeys());document.addEventListener('focusin',e=>{if(['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName))this.resetKeys();});
     }
 
     _initListeners() {
@@ -43,6 +44,7 @@ export class PlayerControls {
 
         this.controls.addEventListener('unlock', () => {
             this.isLocked = false;
+ this.resetKeys();
             const crosshair = document.getElementById('crosshair');
             if (crosshair) crosshair.classList.remove('visible');
         });
@@ -54,7 +56,7 @@ export class PlayerControls {
 
     _onKeyDown(event) {
         // Если фокус в инпуте формы, не перехватываем WASD
-        if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+        if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA' || event.target.tagName === 'SELECT' || event.target.isContentEditable) {
             return;
         }
 
@@ -110,8 +112,10 @@ export class PlayerControls {
     /**
      * Попытка захвата указателя мыши
      */
+    resetKeys(){this.moveForward=this.moveBackward=this.moveLeft=this.moveRight=this.isSprinting=false;this.velocity.set(0,0,0);}
     lock() {
         if (!this.isLocked) {
+ this.resetKeys();
             this.controls.lock();
         }
     }
