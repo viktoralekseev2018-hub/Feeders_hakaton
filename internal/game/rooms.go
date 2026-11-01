@@ -37,20 +37,22 @@ type Receipt struct {
 	State       GameState `json:"state"`
 }
 type Room struct {
-	Experiment *Experiment                  `json:"experiment,omitempty"`
-	Learning   map[string]LearningResult    `json:"learning,omitempty"`
-	Dialogues  map[string][]DialogueMessage `json:"dialogues"`
-	Code       string                       `json:"code"`
-	Name       string                       `json:"name"`
-	Owner      string                       `json:"owner"`
-	Started    bool                         `json:"started"`
-	Generation int                          `json:"generation"`
-	Members    map[string]*RoomMember       `json:"members"`
-	State      GameState                    `json:"state"`
-	Proposal   *Proposal                    `json:"proposal,omitempty"`
-	Chat       []ChatMessage                `json:"chat"`
-	Receipts   map[string]Receipt           `json:"receipts"`
-	engine     *ScenarioEngine
+	Universe             *Universe                    `json:"universe,omitempty"`
+	UniverseChatReceipts []UniverseChatReceipt        `json:"universe_chat_receipts,omitempty"`
+	Experiment           *Experiment                  `json:"experiment,omitempty"`
+	Learning             map[string]LearningResult    `json:"learning,omitempty"`
+	Dialogues            map[string][]DialogueMessage `json:"dialogues"`
+	Code                 string                       `json:"code"`
+	Name                 string                       `json:"name"`
+	Owner                string                       `json:"owner"`
+	Started              bool                         `json:"started"`
+	Generation           int                          `json:"generation"`
+	Members              map[string]*RoomMember       `json:"members"`
+	State                GameState                    `json:"state"`
+	Proposal             *Proposal                    `json:"proposal,omitempty"`
+	Chat                 []ChatMessage                `json:"chat"`
+	Receipts             map[string]Receipt           `json:"receipts"`
+	engine               *ScenarioEngine
 }
 type roomDisk struct {
 	Rooms      map[string]*Room  `json:"rooms"`
@@ -73,6 +75,10 @@ func (m *Module) WithPersistence(s storage.StateStore) error {
 			m.membership = map[string]string{}
 		}
 		for _, r := range m.rooms {
+			u := universeOf(r)
+			for i := range u.Objects {
+				u.Objects[i].HeldBy = ""
+			}
 			r.engine = &ScenarioEngine{state: r.State}
 			if r.Receipts == nil {
 				r.Receipts = map[string]Receipt{}
@@ -131,6 +137,7 @@ func (m *Module) roomViewLocked(r *Room) map[string]any {
 	return copy
 }
 func (m *Module) publishRoom(code string) {
+	defer m.publishUniverse(code)
 	m.roomMu.Lock()
 	r := m.rooms[code]
 	if r == nil {
@@ -157,6 +164,7 @@ func (m *Module) sendRoom(s realtime.Session, id string) {
 	if r != nil {
 		s.Send("room.state", id, m.roomViewLocked(r))
 		s.Send("game.state", "", r.engine.GetState())
+		s.Send("universe.state", "", snapshotUniverse(r))
 	} else {
 		s.Send("room.state", id, map[string]any{"code": ""})
 	}
@@ -226,6 +234,7 @@ func (m *Module) roomCommand(ctx context.Context, s realtime.Session, e protocol
 			}
 		}
 		if old := m.rooms[oldCode]; old != nil && old.Code != r.Code {
+			m.releaseUniverseHeldLocked(old, id)
 			delete(old.Members, id)
 			old.Proposal = nil
 			if old.Owner == id {
@@ -244,6 +253,7 @@ func (m *Module) roomCommand(ctx context.Context, s realtime.Session, e protocol
 			fail("Вы не в комнате")
 			return
 		}
+		m.releaseUniverseHeldLocked(r, id)
 		delete(r.Members, id)
 		delete(m.membership, id)
 		r.Proposal = nil
@@ -298,6 +308,8 @@ func (m *Module) roomCommand(ctx context.Context, s realtime.Session, e protocol
 			return
 		}
 		r.Generation++
+		r.Universe = newUniverse()
+		r.UniverseChatReceipts = nil
 		r.engine = NewScenarioEngine()
 		r.Started = false
 		r.Receipts = map[string]Receipt{}

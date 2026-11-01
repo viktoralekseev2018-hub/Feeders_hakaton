@@ -1,6 +1,6 @@
 //go:build !qatools
 
-package main
+package app
 
 import (
 	"feeders/internal/auth"

@@ -97,6 +97,19 @@ func (m *Module) WithWorld(dir string, a *auth.Handler) error {
 	if total != w.Bytes || w.ChunkSize <= 0 {
 		return fmt.Errorf("world manifest size mismatch")
 	}
+	// Preserve resource IDs and AOI streaming; relocate the authored biologist with the new room.
+	for i := range w.Chunks {
+		if w.Chunks[i].NPC == "ryazansky" {
+			w.Chunks[i].CX = -3
+			w.Chunks[i].CZ = -2
+		}
+	}
+	w.Rooms = nil
+	for _, a := range deck.Areas {
+		if a.Kind == "room" {
+			w.Rooms = append(w.Rooms, WorldRoom{ID: a.ID, X: a.X, Z: a.Z, W: a.W, D: a.D, Name: a.Name})
+		}
+	}
 	m.streamWorld = w
 	return nil
 }
@@ -236,7 +249,7 @@ func (m *Module) teleport(ctx context.Context, s realtime.Session, e protocol.En
 		sendError(s, e, "invalid_target", "Выберите допустимую точку корабля")
 		return
 	}
-	targets := map[string]model.Position{"cryo": {X: -15, Y: 1.7, Z: 0}, "bridge": {X: 0, Y: 1.7, Z: 2}, "reactor": {X: 12, Y: 1.7, Z: 2}, "bio": {X: -4, Y: 1.7, Z: -14}, "savinykh": {X: 4.2, Y: 1.7, Z: -.5}, "dzhanibekov": {X: 12, Y: 1.7, Z: 3}, "ryazansky": {X: -4, Y: 1.7, Z: -14}, "krikalev": {X: -5, Y: 1.7, Z: -.5}}
+	targets := map[string]model.Position{"cryo": {X: -15, Y: 1.7, Z: 0}, "bridge": {X: 0, Y: 1.7, Z: 4.5}, "reactor": {X: 12, Y: 1.7, Z: 2}, "bio": {X: -19, Y: 1.7, Z: -14}, "savinykh": {X: 4.2, Y: 1.7, Z: -.5}, "dzhanibekov": {X: 12, Y: 1.7, Z: 3}, "ryazansky": {X: -19, Y: 1.7, Z: -14}, "krikalev": {X: -5, Y: 1.7, Z: -.5}}
 	pos, ok := targets[p.Target]
 	if !ok {
 		sendError(s, e, "invalid_target", "Неизвестная точка корабля")
@@ -268,11 +281,5 @@ func (m *Module) Walkable(x, z float64) bool {
 	if m.streamWorld == nil {
 		return true
 	}
-	floor := (math.Abs(z) < 3 && x > -22 && x < 23) || (math.Abs(x) < 3 && z > -22 && z < 5)
-	for _, r := range m.streamWorld.Rooms {
-		if math.Abs(x-r.X) < r.W/2-.3 && math.Abs(z-r.Z) < r.D/2-.3 {
-			floor = true
-		}
-	}
-	return floor && math.Hypot(x-17, z) >= 2.65 && !(math.Abs(x) < 2.8 && math.Abs(z+2) < 1.65)
+	return deckWalkable(x, z)
 }

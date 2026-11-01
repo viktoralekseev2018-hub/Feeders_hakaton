@@ -1,6 +1,11 @@
 {
-  "release": "Flight Deck ready-to-run",
-  "omitted": "vendor: Go build dependencies; available in original LastCrew.zip",
+  "release": "Flight Deck · Light Interior + Local Ollama · 2026-11-01",
+  "omitted": "vendor: Go build dependencies; rebuild requires cached modules or network access",
+  "cross_compiled_platforms": [
+    "linux/amd64",
+    "windows/amd64"
+  ],
+  "validation": "docs/INTERIOR_UPDATE.md",
   "files": [
     {
       "path": ".github/workflows/go.yml",
@@ -9,13 +14,23 @@
     },
     {
       "path": ".gitignore",
-      "bytes": 319,
-      "sha256": "f60487dd2461019f7f54a2e41b984fdafacf7930a6a5036c0c4a9686f49a4078"
+      "bytes": 329,
+      "sha256": "0f61004387f4cab3bb8cb6ad4b24e464f3c2b2b89779bc5ee2178e610ad8e2ca"
     },
     {
       "path": ".vscode/settings.json",
-      "bytes": 40,
-      "sha256": "41b053a69f57d282624ccccbc44ef195ee13770e7037cf59f22cffc9c749f422"
+      "bytes": 265,
+      "sha256": "7d140f6966b32543266921cf2a8ddf8870b7d9cacc673372461b9040e49051fe"
+    },
+    {
+      "path": ".vscode/tasks.json",
+      "bytes": 718,
+      "sha256": "05036558592ab1cf6800da6eaa2f337a6f9d188d7ad8b2edf62860ad1db420cd"
+    },
+    {
+      "path": "FIZMA_frontend.zip",
+      "bytes": 50551,
+      "sha256": "691c04b701750fa1bb10d861daa9a9cca307bd5367f0342742bb4e7b111e53d3"
     },
     {
       "path": "FRONTEND_REPORT.md",
@@ -24,38 +39,43 @@
     },
     {
       "path": "README.md",
-      "bytes": 17710,
-      "sha256": "12d0b744c4ff4ca21f23e1f840de5f349aff1b25a7c99ba00193cd38349ee1f5"
+      "bytes": 22456,
+      "sha256": "a50708bb3229b9f6e9244a32418d0b901a6f9b844ad4ee69853deeea1454b049"
+    },
+    {
+      "path": "START_HERE.txt",
+      "bytes": 3232,
+      "sha256": "1137b2799b5fc21f799626a464082b95d33f1f367950cecf55bb6ecac5b487e2"
     },
     {
       "path": "Start.bat",
-      "bytes": 480,
-      "sha256": "a973a1749e88482b9b7567ba86d4bc6cb6b77d805b7b12bd9c10540d7eb6bd4e"
+      "bytes": 497,
+      "sha256": "f15987713593340dbb14f7183e99970564cafb123cf75391ca7db339b1a8cb63"
     },
     {
       "path": "Start.command",
-      "bytes": 68,
-      "sha256": "b5f90897e5c2065ed19ead62d429d129f315fe493cad077d6ff9596683c709d5"
+      "bytes": 119,
+      "sha256": "4310ee6bfbc7583d1fca785a2319b8eeb744e3976d9e80b80c09abb03eb4a349"
     },
     {
       "path": "Start.sh",
-      "bytes": 717,
-      "sha256": "60ebd9a2be43ba187debca7f594911dc49d248833caffaa422dd2a78bada70f9"
+      "bytes": 762,
+      "sha256": "fe59c3466b6f2505c8c372e693f9a1dea6ad9ea4296125f9b0348456b975b30e"
     },
     {
       "path": "Start_AI.bat",
-      "bytes": 580,
-      "sha256": "3cc5e79300a8bfc66a41aabb8f54a5e8289a4632b14fe08e3b8420f344f1f98e"
+      "bytes": 586,
+      "sha256": "2d2541573f23d15700c0ddc91dd543f5aaaa5e72582ae7a23e7093832e7ca424"
     },
     {
       "path": "Start_AI.command",
-      "bytes": 71,
-      "sha256": "9b283fffd1d1ba29734b72c40b31db5ce089bcebb0de33ce29eb9a9a49d6c695"
+      "bytes": 122,
+      "sha256": "b4303109b7ec668cf253f1951ed0ae94172fbb8ca32c20069e5ce613c0c96ca1"
     },
     {
       "path": "Start_AI.sh",
-      "bytes": 308,
-      "sha256": "93fc958854d108bd9e393ba47e18d8d303c64bb9490f48c44e9000ce35ad3c15"
+      "bytes": 380,
+      "sha256": "26c936c68ebbc93aafbed69028122dcb633ce872646c51e2bc9d4f6a23b4878a"
     },
     {
       "path": "TEST_REPORT_RELEASE.md",
@@ -64,58 +84,53 @@
     },
     {
       "path": "bin/game-server",
-      "bytes": 12484760,
-      "sha256": "c5a26f21b86409ce655a0abcc980956e667f0db482b5d217e967bc486befcd30"
+      "bytes": 13492386,
+      "sha256": "c1be4de9f01ae3ed75eee99404073bb51e27355db0402d09f754e989e1601d0b"
     },
     {
       "path": "bin/game-server-macos-arm64",
-      "bytes": 12273410,
-      "sha256": "19db084a3c6ca0f4f0bb5badeba6b9a7f5b271e957b6d26d80422a2d0888d06c"
+      "bytes": 13025618,
+      "sha256": "4930c8500bef00c89fe987a7ccbbb0dcbdad99316213d24c6c65cae445078875"
     },
     {
       "path": "bin/game-server.exe",
-      "bytes": 12745216,
-      "sha256": "436e1dc60ab559caa4b8fb7002c96d366e647b20e0742a1ea7e3d5b5991b9db4"
+      "bytes": 13754880,
+      "sha256": "dd048e5e6ed2993088f9279e70cfd569cbd57a0433a643229f92891100b1cdfc"
     },
     {
       "path": "bin/mcp-tools",
-      "bytes": 9425048,
-      "sha256": "8c1709f4b9aa0be2067c3bd4fecdc7a575fa5399db013b57be93f273280fbd54"
+      "bytes": 10010786,
+      "sha256": "992289c3a59248fea13bbf6736be379f766d09cd7aba32dce8f3313b1cc87cfe"
     },
     {
       "path": "bin/mcp-tools-macos-arm64",
-      "bytes": 9231986,
-      "sha256": "8dca619be0c9b4c7ae3a9887a0e7c7b5df44a4af32313dc0c32a269aba987718"
+      "bytes": 9631170,
+      "sha256": "12bd09621d5455948d4fbfe4f700b867b68fed6d2e17b8f25a58aa09c41e9c0a"
     },
     {
       "path": "bin/mcp-tools.exe",
-      "bytes": 9643008,
-      "sha256": "e0e00886e9b21789465aff1f32b6132c8d01d13b61db2293d1f1e9ea652ad4cf"
+      "bytes": 10228224,
+      "sha256": "d50a31a3ab0d5c84ead38a91266b149d87567d13f0339b02688030143ca5adc6"
+    },
+    {
+      "path": "cmd/check-agents/main.go",
+      "bytes": 1931,
+      "sha256": "20fcc8b16b87d7f2b83cbabdc1fe58ed0d83a010576093d6cecfa3cc30f585aa"
     },
     {
       "path": "cmd/game-server/main.go",
-      "bytes": 5001,
-      "sha256": "d1514561ce980a6f23c870c854371c3565f9ac49ac1b5ae1ec76b2e6b8f1d8d1"
-    },
-    {
-      "path": "cmd/game-server/qa_default.go",
       "bytes": 158,
-      "sha256": "e1ab541f6171e57030d697fdf6b736108b4cd58401aea3a64ab773edbd1bcb35"
-    },
-    {
-      "path": "cmd/game-server/qa_mode.go",
-      "bytes": 1608,
-      "sha256": "158c5109ab3a9c0cfcd80894d7a3fbbca82c4c7f99798a211f5db002f051930f"
+      "sha256": "d6ea5c6c1cea7ddecd1f484c7e9c3f750d57ce9d726cc0c63f908fbbb1baac63"
     },
     {
       "path": "cmd/mcp-tools/main.go",
-      "bytes": 3822,
-      "sha256": "ed23d2948680bdbb5622eea4ffa94786f91a229c595133f0c7b8f3d4df810793"
+      "bytes": 101,
+      "sha256": "5728c6c10df525faabddd903762bcb23cb8775bb3e288c1bc8c5d03c61c81f8f"
     },
     {
       "path": "cmd/smoke-release/main.go",
-      "bytes": 8124,
-      "sha256": "6deebaa50f03b556e00fe7587eaac4199a15a3260f2e4bf7f19530b6a5206738"
+      "bytes": 10568,
+      "sha256": "1e96d1c922395d438971b31a352d46310b402c65f479e7f0351c063c325479c7"
     },
     {
       "path": "contracts/client-message.schema.json",
@@ -163,9 +178,19 @@
       "sha256": "9e74ffa31a261dd40cb2b0861b21ea136956076167da595c2d0d27cf9287f0ce"
     },
     {
+      "path": "docs/INTERIOR_UPDATE.md",
+      "bytes": 17779,
+      "sha256": "962127679f187f8863b471e8a2273e04eb202bc3c918994d63d07062d49bdee7"
+    },
+    {
       "path": "docs/LAN_CHECK.md",
       "bytes": 3661,
       "sha256": "fd8ff84be26a75cbd84833d3ac36fbc1f5cde1e8ce8af4501a058971bdd0fc3a"
+    },
+    {
+      "path": "docs/SUNDAY_UPDATE.md",
+      "bytes": 12383,
+      "sha256": "df3cf2b85eeaf78d9298df8a4ed96be2d7fd6a574fbc95f9f92e4732e915cc94"
     },
     {
       "path": "docs/TASK_PROMPT.md",
@@ -233,14 +258,114 @@
       "sha256": "e0c21973d2c93173058c4300e09bee1826e20eba51fc880fa15e8bd36e4f6ed5"
     },
     {
+      "path": "docs/interior-review/benchmark.json",
+      "bytes": 696,
+      "sha256": "91f34da8470bc55814370993a1ff01f74aed21d994ea050cf3e3d355d697784e"
+    },
+    {
+      "path": "docs/interior-review/bridge.png",
+      "bytes": 75507,
+      "sha256": "027d83ec706895bd538ef9df4404d71cc630f6555aded81e396ea43fb9aaca84"
+    },
+    {
+      "path": "docs/interior-review/cargo.png",
+      "bytes": 37724,
+      "sha256": "c7e367f51468319c43232ce0efbdcd282e939c48b54de7e4182abde37416decb"
+    },
+    {
+      "path": "docs/interior-review/corridor.png",
+      "bytes": 57265,
+      "sha256": "42b8335b6116f5c72d4e3f979b573d2ade0190078fc30481738073131ab3eb2d"
+    },
+    {
+      "path": "docs/interior-review/door-closed.png",
+      "bytes": 15829,
+      "sha256": "0f3f7ea7bba2c19b3ab67be334b066591df700dd2850386f7ae6525fb36067a2"
+    },
+    {
+      "path": "docs/interior-review/door-open.png",
+      "bytes": 20323,
+      "sha256": "d8d8790aef71717d6330d8a5c10476790d267f58d0b9c63dee6775d741cddca8"
+    },
+    {
+      "path": "docs/interior-review/habitat.png",
+      "bytes": 37237,
+      "sha256": "629e43e7ee0908fe8e365e84148eb4a72c2bcf451103dbcb80a64e4536ee0d85"
+    },
+    {
+      "path": "docs/interior-review/render-metrics.json",
+      "bytes": 876,
+      "sha256": "a36c2a153a7cd658368087aa8255859e6f41c054f74e88f1840793980a2f78a7"
+    },
+    {
+      "path": "docs/interior-review/research.png",
+      "bytes": 36182,
+      "sha256": "170ec89b3f131d096e1d53fb8ed59e5ad211f71be04125241efb1415b6dfc32e"
+    },
+    {
+      "path": "docs/interior-review/validation/canvas-lighting.log",
+      "bytes": 357,
+      "sha256": "ef03f47f978c9915167268a8099460cbf716c7bc463bada65cd884e56f7d5efa"
+    },
+    {
+      "path": "docs/interior-review/validation/checks.json",
+      "bytes": 1037,
+      "sha256": "2437f659ef9f72e5620aa0dd28fcb25b31edb6b0446ddcd95571b3cad9b4d4d3"
+    },
+    {
+      "path": "docs/interior-review/validation/go-agents.log",
+      "bytes": 33,
+      "sha256": "b289936d0da9f4e73ba615e9d64bb207fa4c64727795129aa86ba014855d4dfc"
+    },
+    {
+      "path": "docs/interior-review/validation/go-compile.log",
+      "bytes": 1011,
+      "sha256": "df7109dc33cbbc2afb9b80acb014c5b4cf9f52b47eacd1a1ace608a657257155"
+    },
+    {
+      "path": "docs/interior-review/validation/go-domains.log",
+      "bytes": 146,
+      "sha256": "0653b92ee5ddcf61f5a6ce585580f276c976f0699fb94e1b6dc69f48f24085c9"
+    },
+    {
+      "path": "docs/interior-review/validation/go-game-race.log",
+      "bytes": 34,
+      "sha256": "561f95bf13868c653ba3f219c8af781d9fc46956d16ee5278b7022f3d3e0c057"
+    },
+    {
+      "path": "docs/interior-review/validation/go-game.log",
+      "bytes": 34,
+      "sha256": "0ffa11f0aeaf4cca95a73cd30c4666c5401fc1caa323bea9aaa206699e2f7bef"
+    },
+    {
+      "path": "docs/interior-review/validation/go-vet.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/interior-review/validation/javascript.log",
+      "bytes": 1723,
+      "sha256": "6bf1c02694e16d50ebdbad947e0ce7151a7c838ae94eb5b9c28fca928ad5fd3e"
+    },
+    {
+      "path": "docs/interior-review/validation/model-check.log",
+      "bytes": 960,
+      "sha256": "887b72b6edd4997b5e3d9490849fe3c47510f239cc33b94b113e20c9431da352"
+    },
+    {
+      "path": "docs/interior-review/validation/world-assets.log",
+      "bytes": 115,
+      "sha256": "620eb454e618a381ebda74733dde99e73dd948bf8c46593c2467547ca0c0fe8e"
+    },
+    {
       "path": "docs/mcp-rag.md",
       "bytes": 4059,
       "sha256": "aa9883533062df6d72cf95e2cfd9c063dc2b7f3c9a839cc8c234989e68762b05"
     },
     {
       "path": "docs/protocol.md",
-      "bytes": 4312,
-      "sha256": "e13136aece5bb0ebc3c4d57532f16d14f6602ab3e747a3c715ed9c56eb3f09ad"
+      "bytes": 5613,
+      "sha256": "a36bb52606e412d527774ab32b1371e59bfbd1bdfa3f9238c18b4a5d5f628997"
     },
     {
       "path": "docs/reference/README.md",
@@ -308,6 +433,26 @@
       "sha256": "c43b2aeb866fdea457f8288d11fc711b0ebbe4933864a230be93362fc824f644"
     },
     {
+      "path": "docs/sunday/compiled-host-check.json",
+      "bytes": 666,
+      "sha256": "7055a72948cf3b444debf04926faf17f7c6864450dee76d5f961b6b848a2478f"
+    },
+    {
+      "path": "docs/sunday/crew-upgrade.png",
+      "bytes": 474929,
+      "sha256": "facb841773a762767a64ab292eab11cc6dd89bf26a03202b453aa103bd98b609"
+    },
+    {
+      "path": "docs/sunday/interactive-objects.png",
+      "bytes": 183328,
+      "sha256": "23d9b94e53c04d06973a6fa4f010710a70e37de96c666311abc904d784ad2888"
+    },
+    {
+      "path": "docs/sunday/living-deck.png",
+      "bytes": 400228,
+      "sha256": "4a40de494b96e97b1f8e606060a21aa8e24ecff69283f4c5b24ecf1b769acc4e"
+    },
+    {
       "path": "examples/chunks.example.jsonl",
       "bytes": 1646,
       "sha256": "acc02d58b60319d441fff5ecdf27eccbefd3f1537124e39fd8dca05657c70e93"
@@ -334,8 +479,8 @@
     },
     {
       "path": "internal/agents/agents.go",
-      "bytes": 1036,
-      "sha256": "71d70e8009bd6e5889bfdcba29238ccfac9bef14e00dc176a9fca5cb1176b4bd"
+      "bytes": 1161,
+      "sha256": "6abc7d27bb221997d811149d9ed0283914e786dee1da176395f28c3c4fff4415"
     },
     {
       "path": "internal/agents/agents_test.go",
@@ -364,8 +509,8 @@
     },
     {
       "path": "internal/agents/crew_service.go",
-      "bytes": 3264,
-      "sha256": "b1262b9f95cac8146845092e3b5d0900314743ffdd09e82b088bcc40ec5b5572"
+      "bytes": 3322,
+      "sha256": "f598de7ba5a314f3ef50a2c003a2dc38c7dfbd50a398d73a5a88bb550b4818d5"
     },
     {
       "path": "internal/agents/knowledge.go",
@@ -391,6 +536,26 @@
       "path": "internal/agents/prompts.go",
       "bytes": 8157,
       "sha256": "2193db8b1402455fccf0d556e55278754d1e67473d19667cb5c56bfd8ac20c99"
+    },
+    {
+      "path": "internal/app/main.go",
+      "bytes": 1652,
+      "sha256": "cfb2f0f849a09efde17360c0a2c137775bfeb0235e15590460eba14de7c387df"
+    },
+    {
+      "path": "internal/app/qa_default.go",
+      "bytes": 157,
+      "sha256": "088d9089a6ccabf3c03f3313d2eb2ad027c7f1a3fa554b32dfbc8148a03ce787"
+    },
+    {
+      "path": "internal/app/qa_mode.go",
+      "bytes": 1607,
+      "sha256": "95b271636dd90988d179260fe67bcd5b123214b88e9641f5f21c28c5ad479a29"
+    },
+    {
+      "path": "internal/app/server.go",
+      "bytes": 5012,
+      "sha256": "5df30bc9e19a796601ccef67604db13e3c9b6729ec577163bf139548f5bfe128"
     },
     {
       "path": "internal/auth/auth.go",
@@ -429,13 +594,23 @@
     },
     {
       "path": "internal/game/experiment_test.go",
-      "bytes": 5288,
-      "sha256": "d378372f0a87a5006045728200b7fad702e53528d2f31d740cc5f0cfa4c9e254"
+      "bytes": 5460,
+      "sha256": "ea5f1a4e3681a5ccab90ca981ee6960e6d00913d3566b5c559f4229b4e31c238"
+    },
+    {
+      "path": "internal/game/interior.go",
+      "bytes": 6115,
+      "sha256": "09b11da31c37320e4e40bca8b34f6f8d7296732f04d0c03a9fd5cd37a7528f7a"
+    },
+    {
+      "path": "internal/game/interior_test.go",
+      "bytes": 5531,
+      "sha256": "c5911f585d70a41b134a63a53998c8ad3771c36ae2a8d948b26abda5d1c085c7"
     },
     {
       "path": "internal/game/loop.go",
-      "bytes": 9174,
-      "sha256": "5b8a4c46b6b04b3f8d3acbe480b1abd46b31b830578627a216f4d9dcd4d1dc7e"
+      "bytes": 9738,
+      "sha256": "8b4194c097f7d802f8008f5b74af7d515b172a0d5c68606f7f7a3e38d0cbff54"
     },
     {
       "path": "internal/game/loop_test.go",
@@ -444,8 +619,8 @@
     },
     {
       "path": "internal/game/module.go",
-      "bytes": 9904,
-      "sha256": "49b94297764c16bdd5db3132dafa3b458fbc491173e4fc2c77c5da29f660dbef"
+      "bytes": 10570,
+      "sha256": "587a3932b2119e311fa63f18e08772921fb07274d523be0628fd905083823608"
     },
     {
       "path": "internal/game/module_test.go",
@@ -464,8 +639,8 @@
     },
     {
       "path": "internal/game/rooms.go",
-      "bytes": 16435,
-      "sha256": "1a561e185bf15b9648b9535c739ae1c24161a527739e68efc9142ebccdf98f2c"
+      "bytes": 17053,
+      "sha256": "f63933ed9175cec9185b356b8d06eda9bf2d87fd6505f45c3d5ef3a3051ada00"
     },
     {
       "path": "internal/game/rooms_test.go",
@@ -483,9 +658,19 @@
       "sha256": "494979b0486616037d765f04fa37775b4a10234d8048afd011ab0f421e346a91"
     },
     {
+      "path": "internal/game/universe.go",
+      "bytes": 27420,
+      "sha256": "f69bdc698e68758e87ba26e2a62461c268ae08c70beb230ba2135f78f764349d"
+    },
+    {
+      "path": "internal/game/universe_test.go",
+      "bytes": 11096,
+      "sha256": "237f9cd814f8bec8ad0d9e966882ea0d96826736a433f130e369bb7d898c6c62"
+    },
+    {
       "path": "internal/game/worldstream.go",
-      "bytes": 8018,
-      "sha256": "f10fdd331de101d7221cbf268b078c88c8d362bda4ff6f6eb5208e7e71ac96f7"
+      "bytes": 8126,
+      "sha256": "77ecb5204b1c0a945654ddc55dd4efb687e0f97b33b1541982e5601bb185ed81"
     },
     {
       "path": "internal/game/worldstream_test.go",
@@ -523,6 +708,11 @@
       "sha256": "b321c0ff2bdb65a2b57d2b16511697eaf0e97beb1bf77e6a79d5f58baf4063cf"
     },
     {
+      "path": "internal/mcpapp/main.go",
+      "bytes": 3889,
+      "sha256": "90159ff9e4108fe8847d3284b0af0f3968016183c8bf98639feb25bd45db34d0"
+    },
+    {
       "path": "internal/mission/access_test.go",
       "bytes": 2019,
       "sha256": "b6abbdd76d63dd00c3e2d5cc32f3fe6ea61843353b77f604978d8f6649f661be"
@@ -554,8 +744,8 @@
     },
     {
       "path": "internal/npc/agents.go",
-      "bytes": 1019,
-      "sha256": "f8cd84282c74b175527f2d0ed07bac94ee5131382d8a39e3445d2da4ea02228d"
+      "bytes": 1135,
+      "sha256": "4e066bc1e1377e3db971e5b99c56af4d2ab35a469555cbc9f7009c7bd15006b9"
     },
     {
       "path": "internal/npc/crew_corpus_test.go",
@@ -564,8 +754,8 @@
     },
     {
       "path": "internal/npc/fallback.go",
-      "bytes": 8663,
-      "sha256": "ebe25def31811a0c0c471154d301fe8358ace3f28d8160596e314415b25de6f5"
+      "bytes": 9046,
+      "sha256": "97175d79977fc1473cd26445890d7414e246789609ecd04381010a57026f788d"
     },
     {
       "path": "internal/npc/fallback_test.go",
@@ -573,9 +763,14 @@
       "sha256": "8485f07307d6ed8759f327c209bc772b2905eb43974d0f19501844afc9dfa6c4"
     },
     {
+      "path": "internal/npc/local_model_config_test.go",
+      "bytes": 3137,
+      "sha256": "7f2b173c417053bad9134b43000a4974f9639188be2094aed62ffdd85e966857"
+    },
+    {
       "path": "internal/npc/mcp_client.go",
-      "bytes": 3611,
-      "sha256": "320aa6e58c99964ce8e6c4e8a6f3e4df6f1d9ff417d87ffbbf73ca3ebaace293"
+      "bytes": 3878,
+      "sha256": "972de95ba2d47da9dcc8e08445dbe9cea5d1fe1bc9a48604f37b14412eb50310"
     },
     {
       "path": "internal/npc/memory.go",
@@ -589,8 +784,8 @@
     },
     {
       "path": "internal/npc/ollama.go",
-      "bytes": 11892,
-      "sha256": "bdbe89528f133803185d108abc01e5108d4bd527b98c3bfcdf88448573239f98"
+      "bytes": 11917,
+      "sha256": "efa2688ea8bc75f8ca006a8cdc6f565f14ac707897b5addcb12deb85bb22ab76"
     },
     {
       "path": "internal/npc/ollama_test.go",
@@ -646,6 +841,11 @@
       "path": "internal/server/release_test.go",
       "bytes": 6542,
       "sha256": "fcbc794bfbd69a79516eb69b4ae1ba266aa6177caa8a2b52f16c560c914dbad5"
+    },
+    {
+      "path": "internal/server/universe_integration_test.go",
+      "bytes": 11776,
+      "sha256": "43cf695a9130615ef70fae224e7cb449b8888fc5bb7a1d0dae87be7f4799c0b7"
     },
     {
       "path": "internal/storage/file.go",
@@ -731,6 +931,11 @@
       "path": "knowledge/sources/crew/chunks-metadata.jsonl",
       "bytes": 46103,
       "sha256": "defe50253724cb44dc69038e9f7032c3cc7bc265e288a2df6887af799dc615c8"
+    },
+    {
+      "path": "knowledge/sources/crew/documents.json",
+      "bytes": 95930,
+      "sha256": "f4f9cf761f8c6a16860ef56dc74285a51996ade8fda2e021258f36860e8dbe49"
     },
     {
       "path": "knowledge/sources/crew/documents/dzhanibekov/dzhanibekov_doc_001.md",
@@ -1033,14 +1238,14 @@
       "sha256": "a4189bbfbc8849c66592c907413be45e5f535ff86e09965608c66c18119d0ce4"
     },
     {
-      "path": "knowledge/sources/crew/documents.json",
-      "bytes": 95930,
-      "sha256": "f4f9cf761f8c6a16860ef56dc74285a51996ade8fda2e021258f36860e8dbe49"
-    },
-    {
       "path": "knowledge/sources/scenario.docx",
       "bytes": 63285,
       "sha256": "8614efef193cd6f7a0fb63f106972aa49a632429797f8270baf52fb014be2270"
+    },
+    {
+      "path": "lastcrew",
+      "bytes": 18341586,
+      "sha256": "dff14d01771929d16d4c841f6811c717e51bc56bc35ecb2c306412bbd2b10a33"
     },
     {
       "path": "licenses/THREE-MIT.txt",
@@ -1048,9 +1253,14 @@
       "sha256": "162711034366bb4797ca9f2acf959646c209e168abf483458751db77d0e82c7b"
     },
     {
+      "path": "main.go",
+      "bytes": 72,
+      "sha256": "2b7427624532195e4968c0c66128b9b1063f4950fd81d79dd2ab1699610ca30c"
+    },
+    {
       "path": "package.json",
-      "bytes": 125,
-      "sha256": "044ecf774f9db8329a19308e3db7e45c12951fa6927ec04be34a73adfe53b72a"
+      "bytes": 355,
+      "sha256": "38776d051335962ac55eeeb107c010ccca1353ca84e22ca4caafc0f4f272111f"
     },
     {
       "path": "pkg/protocol/protocol.go",
@@ -1063,9 +1273,14 @@
       "sha256": "3cf4408c608f2e6f2cb28cfa8b9954c308d6b272142cd872bcf79c95c348816c"
     },
     {
+      "path": "reference-05.png",
+      "bytes": 2594682,
+      "sha256": "3c8b8b411e6125bc4d5d96fc72faa211246a893ebc7ff35e0afdc669b97376c7"
+    },
+    {
       "path": "scripts/build-all.py",
-      "bytes": 644,
-      "sha256": "1f4b02d5d78395ba6a87932b2569671560e4965aa4f07dc6fff83debf88acfff"
+      "bytes": 807,
+      "sha256": "f58bd1e81fc26e25953ba1b22ab6e90ca7e312c27e982fc0aee3d2f3adfd9afd"
     },
     {
       "path": "scripts/build-world.mjs",
@@ -1074,8 +1289,8 @@
     },
     {
       "path": "scripts/build.ps1",
-      "bytes": 825,
-      "sha256": "2a6162f9a8fb1d64bcd3bd273da723d03e448bea3d315df09612cf11d4676717"
+      "bytes": 889,
+      "sha256": "21cfb4f0bc6caadf4ce432537b61ca3f38017882dfe207d2bea22ce6777aff17"
     },
     {
       "path": "scripts/build_crew_corpus.py",
@@ -1089,8 +1304,8 @@
     },
     {
       "path": "scripts/preview.sh",
-      "bytes": 326,
-      "sha256": "9f13ce5460a2a99a09852bd739954277817ae3f293b068a576ef3debf2ccc31e"
+      "bytes": 347,
+      "sha256": "617d2afbb72c9f5346da34a5b758f1cd03eab4cd68f1a42ef0430a2053b6b992"
     },
     {
       "path": "scripts/rag-requirements.txt",
@@ -1098,9 +1313,19 @@
       "sha256": "bacdc17910532eebcc2b52d409b46ada1358d00491d327448c045cdbda66a4fc"
     },
     {
+      "path": "scripts/render-interior-review.mjs",
+      "bytes": 3686,
+      "sha256": "af044e693740f5a5e33349ee3af438640d6a260d9b83d29464f2365aa7b5e6db"
+    },
+    {
       "path": "scripts/render-model-review.mjs",
       "bytes": 3532,
       "sha256": "16207e256be856f20191597f291139c74b3bc5d55c1f02653717080d1cdadd84"
+    },
+    {
+      "path": "scripts/render-sunday-review.mjs",
+      "bytes": 4898,
+      "sha256": "61568044ef5251243d36a4e217ce96591dffcee310a091e469f5025da2f7b69a"
     },
     {
       "path": "scripts/test-auth-ui.mjs",
@@ -1113,14 +1338,44 @@
       "sha256": "094a70963df2330cd057e9b5a68c18bc5ce38c6cf30f032cdc5b297ac3af5f4f"
     },
     {
+      "path": "scripts/test-interior.mjs",
+      "bytes": 3987,
+      "sha256": "d8fc42f87bbfbb8be4ebf9f7ddad06c7aa29fd01d60d42135cbd18bc908e9583"
+    },
+    {
+      "path": "scripts/test-launcher.py",
+      "bytes": 5822,
+      "sha256": "eb0deb4a91dac6b9f56819ba9d44fe50e0dd3e0b3923f697ba8571d1e5c2d037"
+    },
+    {
+      "path": "scripts/test-living-world.mjs",
+      "bytes": 4779,
+      "sha256": "36eeba4592f368bedd87cf830ebd85ae5f171dc2906a87eed8831a066d0b36ec"
+    },
+    {
       "path": "scripts/test-scene-state.mjs",
       "bytes": 2973,
       "sha256": "3fcaa450f064d3de1c1a1afad0bd42786bde2bc46dd679534c1ec8e361f9e832"
     },
     {
+      "path": "scripts/test-software-lighting.mjs",
+      "bytes": 3297,
+      "sha256": "203c40325b94146fd2a7284703d9312dd76109b8c82a51f95cd6212268cf81cf"
+    },
+    {
+      "path": "scripts/test-universe-dom.mjs",
+      "bytes": 10578,
+      "sha256": "05922d3744bb09243dd890ef6bb96dcf6f63ca269bfff4f46cc9a74d21f9381c"
+    },
+    {
+      "path": "scripts/test-universe-ui.mjs",
+      "bytes": 2774,
+      "sha256": "cadc90cc5542970bfaf05b3bc19e6764910c2c33a1b9607545a6d97431286ec5"
+    },
+    {
       "path": "scripts/validate-release.py",
-      "bytes": 2056,
-      "sha256": "d3a7a664874e554dc02608432833560dcfee1bc526914d0e10acdda06acda4a0"
+      "bytes": 2542,
+      "sha256": "b0759fa2b47ace70c39e529edb35fd5167fa5049e2f6d718cec439eab92c296d"
     },
     {
       "path": "scripts/verify-world.mjs",
@@ -1138,6 +1393,11 @@
       "sha256": "a5eca95cd63a7b63d8af0d759773696ff9df2d6fb48b99423d03afbf4ece2375"
     },
     {
+      "path": "web/css/universe.css",
+      "bytes": 11803,
+      "sha256": "7ce4d360b79a85031c3baade34bb02843589bc9eb6cb0aff2078a94434c82ad3"
+    },
+    {
       "path": "web/embed.go",
       "bytes": 196,
       "sha256": "4258d60f9b46619d295c37cc966546311ebb9be1443d955d411fd7347a5f2d51"
@@ -1149,8 +1409,13 @@
     },
     {
       "path": "web/index.html",
-      "bytes": 17852,
-      "sha256": "d26d6c62c9c6dfe408dde1ccc2c34bf1f8d691bb0a75472a53ab0e77d1f95643"
+      "bytes": 18060,
+      "sha256": "8746d4f7201a45efadd7757615b90e928e87234567c4e7651c8eb9351cc609b8"
+    },
+    {
+      "path": "web/interior.go",
+      "bytes": 175,
+      "sha256": "bd5982272eac37deac25f7d5043c7f797c3372550655abbcde5ccfd8ffaff10a"
     },
     {
       "path": "web/src/controls/PlayerControls.js",
@@ -1159,13 +1424,28 @@
     },
     {
       "path": "web/src/crew/BridgeCrew.js",
-      "bytes": 3057,
-      "sha256": "74d1c22192d3c9c16616d2bff746f10105cff67ad14097d83db908532b7b9805"
+      "bytes": 9681,
+      "sha256": "048df09a2c623a26b060349cec5ef3245b9932884943765d0451dfe880129743"
+    },
+    {
+      "path": "web/src/interior/DeckLayout.js",
+      "bytes": 2315,
+      "sha256": "54ce4d325573420a2f6976ea349fd4bf10a6508c0c8d5d044e2cf62714e20f86"
+    },
+    {
+      "path": "web/src/interior/ShipInterior.js",
+      "bytes": 22418,
+      "sha256": "866405aff8eb1830f866e7eff38d7d41c3b8277ee0c28f55570009be5edd84de"
+    },
+    {
+      "path": "web/src/interior/layout.json",
+      "bytes": 8250,
+      "sha256": "b04d80e7d9f89117fc5267ecacfe8628cd7c26a14717115e96ebea421deee84b"
     },
     {
       "path": "web/src/main.js",
-      "bytes": 45798,
-      "sha256": "5ab0d118fdd112bd132327cb7226a059c3298017b80d40907924b9fbf1e6bc39"
+      "bytes": 48248,
+      "sha256": "f9094a7a9100678bd45e8b81df958d14b29108cbfb84b647033134c7ab3b8813"
     },
     {
       "path": "web/src/mission.js",
@@ -1174,28 +1454,28 @@
     },
     {
       "path": "web/src/net/NetworkManager.js",
-      "bytes": 5297,
-      "sha256": "cf603ddc6945c21d37dd1575ee32d3c98cb62b62e34daa12a53a183043800d8a"
+      "bytes": 5429,
+      "sha256": "db5a968337aa2a201c6bddc8450ba46e243f7e6cef8d1baf7ce11d7b34c92dcb"
     },
     {
       "path": "web/src/render/SoftwareRenderer.js",
-      "bytes": 4534,
-      "sha256": "d257f7ff9ab08e3679503f0a3e70fcdb89d4bcfe2345e2c8ad90769e3301b406"
+      "bytes": 7485,
+      "sha256": "4aed3dd44b5358329495bb7be2c642a803902093e619c76b3905f451d9f435d3"
     },
     {
       "path": "web/src/scene.js",
-      "bytes": 9829,
-      "sha256": "d70a6654c7a24b308b53b9680e9907f9f03845b9347c26eb4b0c16b79d1caf35"
+      "bytes": 13741,
+      "sha256": "1c45841b8ca8d8eedda7aa0fa59a74d5465026627e23b64f730e9ff30ddbb0c7"
     },
     {
       "path": "web/src/ui/AuthScreen.js",
-      "bytes": 7371,
-      "sha256": "b60f3b7ac315145ddf602e1469727b9aeb778634c32f174d87259d6d11c7a271"
+      "bytes": 8529,
+      "sha256": "c99f07ee20360460801ab8e5f854cd7eb437f3cdd0ae7cfb7ffe29fd2c4bf125"
     },
     {
       "path": "web/src/ui/FlightDeck.js",
-      "bytes": 4470,
-      "sha256": "a8564eaab0d28fce5d096e0738792373c9ab215ba9aa4cce8ca1cfc812816541"
+      "bytes": 4423,
+      "sha256": "534cf8c0351700a5c73c03c283e57aed2d82dc49dd1024d5c001e50f77bd3cd0"
     },
     {
       "path": "web/src/ui/Laboratory.js",
@@ -1203,9 +1483,19 @@
       "sha256": "8c67ef8e0aead5bca69326c5c61261389e0218ae8e552b1b0612b793dee65334"
     },
     {
+      "path": "web/src/ui/UniversePanel.js",
+      "bytes": 23622,
+      "sha256": "c6650c96353ad0d4b48a8f7f83891a40475742a036a87f53019fd888c52a0497"
+    },
+    {
+      "path": "web/src/world/LivingWorld.js",
+      "bytes": 18034,
+      "sha256": "74410ad64832a153172fee849a490cdd33ae4bdf81d2a923cb0c098e16b692c0"
+    },
+    {
       "path": "web/src/world/StreamingWorld.js",
-      "bytes": 5995,
-      "sha256": "1acb62d960beeb4aa6d8be5a675aad3e2b29797cf2569441a3acc9296d8dae5b"
+      "bytes": 6124,
+      "sha256": "f4ec6fed2698e542e0b851460da2efd7d8678579267b3d243a658f75046632f5"
     },
     {
       "path": "web/src/world/sha256.js",
@@ -2786,11 +3076,9 @@
       "path": "world_source/scene.js",
       "bytes": 16597,
       "sha256": "1917ecb2381448cbc614286cf0526600977bc7e38b70c169ebbce20ac398b7ef"
-    },
-    {
-      "path": "START_HERE.txt",
-      "bytes": 1587,
-      "sha256": "d508dc17479e85d966f81d25b90027678c1e10853d791bc1ee3992fd9efd2c85"
     }
-  ]
+  ],
+  "build_platform": "darwin/arm64",
+  "runtime_validation": "Offline tests/rendering only; browser, local listening ports and Go-to-Ollama HTTP blocked by sandbox",
+  "launch": "go run . or go build -o lastcrew .; embedded MCP, external world/knowledge and Ollama"
 }

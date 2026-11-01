@@ -1,3 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
 cd -- "$(dirname -- "$0")"
-exec bash ./Start.sh
+exec /bin/bash ./Start.sh

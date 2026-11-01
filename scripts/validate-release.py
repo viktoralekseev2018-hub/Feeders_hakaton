@@ -1,17 +1,24 @@
 #!/usr/bin/env python3
 """Run release checks and retain readable logs. Requires Go, Node, Python."""
-import json, os, subprocess, sys
+import json, os, platform, subprocess, sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parent.parent
 LOGS=ROOT/'docs/validation'
 LOGS.mkdir(parents=True,exist_ok=True)
+MOD='-mod=vendor' if (ROOT/'vendor').is_dir() else '-mod=readonly'
+BINARY='./bin/game-server-macos-arm64' if sys.platform=='darwin' and platform.machine()=='arm64' else './bin/game-server.exe' if sys.platform=='win32' else './bin/game-server'
 checks=[
- ('go-tests',['go','test','-json','-count=1','-mod=vendor','./...']),
- ('go-vet',['go','vet','-mod=vendor','./...']),
- ('go-race',['go','test','-race','-count=1','-mod=vendor','./internal/game','./internal/npc','./internal/agents','./internal/server','./internal/storage']),
+ ('go-tests',['go','test','-json','-count=1',MOD,'./...']),
+ ('go-vet',['go','vet',MOD,'./...']),
+ ('go-race',['go','test','-race','-count=1',MOD,'./internal/game','./internal/npc','./internal/agents','./internal/server','./internal/storage']),
+ ('auth-ui',['node','scripts/test-auth-ui.mjs']),
+ ('universe-ui',['node','scripts/test-universe-ui.mjs']),
+ ('universe-dom',['node','scripts/test-universe-dom.mjs']),
+ ('living-world',['node','scripts/test-living-world.mjs']),
+ ('scene-state',['node','scripts/test-scene-state.mjs']),
  ('world-assets',['node','scripts/verify-world.mjs']),
  ('crew-corpus',['python3','scripts/build_crew_corpus.py','--check']),
- ('release-binary',['go','run','-mod=vendor','./cmd/smoke-release','./bin/game-server'])
+ ('release-binary',['go','run',MOD,'./cmd/smoke-release',BINARY])
 ]
 results=[]
 for name,args in checks:

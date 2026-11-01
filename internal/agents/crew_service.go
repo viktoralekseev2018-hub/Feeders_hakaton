@@ -66,7 +66,7 @@ func (s *CrewService) Talk(ctx context.Context, r Request) (Reply, error) {
 		s.mu.Unlock()
 	}
 	p, _ := crew.Find(r.AgentID)
-	answer := Reply{ToolTransport: reply.ToolTransport, AgentID: reply.AgentID, AgentName: p.Name, Text: reply.Text, Evidence: reply.Evidence, Analysis: reply.Analysis, Mode: reply.Mode}
+	answer := Reply{Model: reply.Model, FallbackReason: reply.FallbackReason, ToolTransport: reply.ToolTransport, AgentID: reply.AgentID, AgentName: p.Name, Text: reply.Text, Evidence: reply.Evidence, Analysis: reply.Analysis, Mode: reply.Mode}
 	seenSources := map[string]bool{}
 	for _, e := range reply.Evidence {
 		if reply.Mode == "model" && !strings.Contains(reply.Text, "["+e.ID+"]") {

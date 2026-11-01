@@ -24,7 +24,7 @@ var ErrBusy = errors.New("agent capacity is busy")
 
 // Includes model loading and every tool round, bounded independently of the
 // WebSocket reader. The old five-second budget routinely skipped local models.
-const ModelTimeout = 30 * time.Second
+const ModelTimeout = 60 * time.Second
 
 type call struct {
 	Function struct {
@@ -59,6 +59,7 @@ type Local struct {
 	mcpURL         string
 	mcpToken       string
 	mcpBinary      string
+	mcpArgs        []string
 	mcpView        string
 	mcpCorpus      string
 }

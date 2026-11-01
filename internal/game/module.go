@@ -36,6 +36,7 @@ type Module struct {
 	rooms          map[string]*Room
 	membership     map[string]string
 	stateStore     storage.StateStore
+	telemetry      map[string]ClientTelemetry
 }
 
 func (m *Module) WithAgents(s agents.Service) *Module { m.agents = s; return m }
@@ -58,6 +59,7 @@ func New(players storage.Players, worldService world.Service, agentService agent
 
 func (m *Module) Register(h *realtime.Hub) {
 	m.hub = h
+	m.registerUniverse(h)
 	for _, kind := range []string{"room.get", "room.create", "room.join", "room.leave", "room.role", "room.ready", "room.start", "room.reset"} {
 		h.Handle(kind, m.roomCommand)
 	}
@@ -120,6 +122,7 @@ func (m *Module) init(ctx context.Context, s realtime.Session, e protocol.Envelo
 			}
 		}
 
+		state = m.repairDoorSpawn(state)
 		m.mu.Lock()
 		m.ready[id] = state
 		m.mu.Unlock()
@@ -160,6 +163,20 @@ func (m *Module) input(ctx context.Context, s realtime.Session, e protocol.Envel
 		return
 	}
 
+	if m.universeBlocksMovement(s.User().ID, input.X, input.Z) {
+		sendError(s, e, "door_closed", "Шлюз закрыт. Откройте его клавишей E")
+		accepted := state
+		if loop, ok := m.world.(interface{ GetAllPlayersStates() []model.PlayerState }); ok {
+			for _, current := range loop.GetAllPlayersStates() {
+				if current.PlayerID == s.User().ID {
+					accepted = current
+					break
+				}
+			}
+		}
+		s.Send("player.position", "", accepted)
+		return
+	}
 	if err := m.world.Input(ctx, s.User().ID, input); err != nil {
 		if loop, ok := m.world.(*ServerLoop); ok {
 			for _, accepted := range loop.GetAllPlayersStates() {
@@ -188,6 +205,9 @@ func (m *Module) talk(ctx context.Context, s realtime.Session, e protocol.Envelo
 		return
 	}
 
+	if m.talkUniverse(s, e, input.AgentID, input.Text) {
+		return
+	}
 	if m.agents == nil {
 		sendError(s, e, "feature_disabled", "AI agent service is not connected")
 		return
@@ -220,7 +240,7 @@ func (m *Module) talk(ctx context.Context, s realtime.Session, e protocol.Envelo
 	}
 	go func() {
 		defer func() { <-m.agentWork; m.mu.Lock(); delete(m.agentBusy, id); m.mu.Unlock() }()
-		talkCtx, cancel := context.WithTimeout(ctx, 40*time.Second)
+		talkCtx, cancel := context.WithTimeout(ctx, 70*time.Second)
 		defer cancel()
 		scope := m.memoryScope(id)
 		reply, err := m.agents.Talk(talkCtx, agents.Request{PlayerID: id, AgentID: input.AgentID, Text: input.Text, Scope: scope})
@@ -325,6 +345,7 @@ func (m *Module) solve(ctx context.Context, s realtime.Session, e protocol.Envel
 }
 
 func (m *Module) leave(ctx context.Context, user model.User) {
+	m.leaveUniverse(user.ID)
 	defer m.exportCrewView()
 	defer func() { m.publishRoom(m.RoomOf(user.ID)) }()
 	m.mu.Lock()

@@ -1,3 +1,4 @@
+import {roomAt} from '../interior/DeckLayout.js';
 const $ = id => document.getElementById(id);
 const defaults = {accent: 'cyan', motion: 'system', quality: 'balanced'};
 const colors = {cyan: '#83ded5', blue: '#9ccdf1', amber: '#efc284'};
@@ -35,10 +36,10 @@ export function installFlightDeck({getShip, modal, toast, help, crew}) {
     const ship = getShip();
     if(!ship?.active) return;
     const {x,z} = ship.player;
-    const id = z < -9 ? 'bio' : x < -9 ? 'cryo' : x > 9 ? 'reactor' : 'bridge';
+    const area=roomAt(x,z);const id=area?.id||'corridor';
     if(id === lastLocation) return;
     lastLocation=id;
-    $('location-label').textContent='Вы здесь · '+({bio:'оранжерея',cryo:'криоотсек',reactor:'реактор',bridge:'мостик'}[id]);
+    $('location-label').textContent='Вы здесь · '+(area?.name||'переход');
     document.querySelectorAll('[data-room]').forEach(b=>{
       b.classList.toggle('current-room', b.dataset.room===id);
       if(b.dataset.room===id)b.setAttribute('aria-current','location');else b.removeAttribute('aria-current');

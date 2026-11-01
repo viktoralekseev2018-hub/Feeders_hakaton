@@ -19,6 +19,7 @@ temp/
 !/data/.gitkeep
 /.cache/
 /bin/
+/lastcrew
 *.exe
 
 # Preview fixtures and procedural generation intermediates

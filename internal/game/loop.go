@@ -161,6 +161,9 @@ func (l *ServerLoop) Join(ctx context.Context, user model.User, state model.Play
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	if l.Walkable != nil {
+		state.Position.Y = 1.7
+	}
 	if l.Walkable != nil && !l.Walkable(state.Position.X, state.Position.Z) {
 		state.Position = model.Position{X: -15, Y: 1.7, Z: 0}
 	}
@@ -205,8 +208,21 @@ func (l *ServerLoop) Input(ctx context.Context, playerID string, input protocol.
 		return errors.New("coordinates out of bounds")
 	}
 
+	if l.Walkable != nil && math.Abs(input.Y-1.7) > .02 {
+		return errors.New("player must remain on deck")
+	}
 	if l.Walkable != nil && !l.Walkable(input.X, input.Z) {
 		return errors.New("оборудование или граница отсека")
+	}
+	// Sweep the whole segment; endpoint-only tests allow thin-wall tunneling.
+	if l.Walkable != nil {
+		steps := int(math.Ceil(math.Hypot(input.X-p.Position.X, input.Z-p.Position.Z) / .08))
+		for i := 1; i < steps; i++ {
+			t := float64(i) / float64(steps)
+			if !l.Walkable(p.Position.X+(input.X-p.Position.X)*t, p.Position.Z+(input.Z-p.Position.Z)*t) {
+				return errors.New("wall crossing")
+			}
+		}
 	}
 	// 3. Проверка допустимой скорости (анти-телепортация)
 	now := time.Now()

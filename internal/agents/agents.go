@@ -14,15 +14,17 @@ type Request struct {
 }
 
 type Reply struct {
-	ToolTransport string      `json:"tool_transport,omitempty"`
-	AgentID       string      `json:"agent_id"`
-	AgentName     string      `json:"agent_name"`
-	Text          string      `json:"text"`
-	Citation      *Citation   `json:"citation,omitempty"`
-	Citations     []Citation  `json:"citations,omitempty"`
-	Evidence      []rag.Chunk `json:"evidence,omitempty"`
-	Analysis      any         `json:"analysis,omitempty"`
-	Mode          string      `json:"mode,omitempty"`
+	Model          string      `json:"model,omitempty"`
+	FallbackReason string      `json:"fallback_reason,omitempty"`
+	ToolTransport  string      `json:"tool_transport,omitempty"`
+	AgentID        string      `json:"agent_id"`
+	AgentName      string      `json:"agent_name"`
+	Text           string      `json:"text"`
+	Citation       *Citation   `json:"citation,omitempty"`
+	Citations      []Citation  `json:"citations,omitempty"`
+	Evidence       []rag.Chunk `json:"evidence,omitempty"`
+	Analysis       any         `json:"analysis,omitempty"`
+	Mode           string      `json:"mode,omitempty"`
 }
 
 // Service implementations use local resources only; remember prior interactions

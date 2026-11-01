@@ -10,4 +10,5 @@ done
 export HOST_ADDR="0.0.0.0:$LAST_CREW_PREVIEW_PORT"
 export DATA_DIR="${LASTCREW_PREVIEW_DATA_DIR:-.preview-data}"
 export DEV_WEB_DIR=web
-exec ./bin/game-server
+cd -- "$(dirname -- "$0")/.."
+exec go run .

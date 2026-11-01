@@ -14,8 +14,10 @@ import (
 	"time"
 )
 
-func (s *Local) WithMCP(binary, view, corpus string) *Local {
+// WithMCP accepts optional arguments before the MCP flags, e.g. --mcp for the host itself.
+func (s *Local) WithMCP(binary, view, corpus string, prefixArgs ...string) *Local {
 	s.mcpBinary = binary
+	s.mcpArgs = append([]string(nil), prefixArgs...)
 	s.mcpView = view
 	s.mcpCorpus = corpus
 	return s
@@ -73,7 +75,9 @@ func (s *Local) callMCP(ctx context.Context, r Request, name string, args json.R
 	if err != nil {
 		return nil, err
 	}
-	command := exec.CommandContext(childCtx, binary, "-chunks", s.mcpCorpus, "-view-file", s.mcpView, "-player-id", r.PlayerID)
+	commandArgs := append([]string(nil), s.mcpArgs...)
+	commandArgs = append(commandArgs, "-chunks", s.mcpCorpus, "-view-file", s.mcpView, "-player-id", r.PlayerID)
+	command := exec.CommandContext(childCtx, binary, commandArgs...)
 	command.Env = append(os.Environ(), "MCP_WORLD_URL="+s.mcpURL, "MCP_WORLD_TOKEN="+s.mcpToken)
 	input := bytes.Buffer{}
 	enc := json.NewEncoder(&input)

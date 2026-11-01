@@ -65,7 +65,7 @@ func main() {
 	}
 	defer stop()
 	start(false)
-	for _, asset := range []string{"index.html", "src/main.js", "css/style.css", "src/scene.js", "src/net/NetworkManager.js"} {
+	for _, asset := range []string{"index.html", "src/main.js", "css/style.css", "css/universe.css", "src/scene.js", "src/net/NetworkManager.js", "src/ui/UniversePanel.js", "src/world/LivingWorld.js", "src/crew/BridgeCrew.js"} {
 		response, err := http.Get(base + "/" + asset)
 		check(err)
 		actual, err := io.ReadAll(response.Body)
@@ -134,6 +134,48 @@ func main() {
 		call(c, "room.ready", "ready", map[string]bool{"ready": true})
 	}
 	call(a, "room.start", "start", map[string]any{})
+	// Sunday features through the actual compiled host, with two authenticated clients.
+	readUniverse := func(c *websocket.Conn, id string) map[string]any {
+		packet := call(c, "universe.get", id, map[string]any{})
+		var world map[string]any
+		check(json.Unmarshal(packet.Payload, &world))
+		return world
+	}
+	u := readUniverse(a, "universe-initial")
+	call(a, "universe.admin", "universe-settings", map[string]any{"expected_version": u["version"], "settings": map[string]any{"npc_count": 96, "ambient_color": "#ff8855"}})
+	u = readUniverse(b, "universe-peer")
+	if u["settings"].(map[string]any)["npc_count"] != float64(96) {
+		panic("universe settings not shared")
+	}
+	call(a, "universe.interact", "crate-pickup", map[string]any{"expected_version": u["version"], "object_id": "crate-cryo", "action": "pickup"})
+	u = readUniverse(b, "carried-crate")
+	if u["objects"].([]any)[1].(map[string]any)["held_by"] == "" {
+		panic("pickup not shared")
+	}
+	call(a, "universe.interact", "crate-drop", map[string]any{"expected_version": u["version"], "object_id": "crate-cryo", "action": "drop"})
+	call(b, "agent.talk", "plant-world", map[string]string{"agent_id": "ryazansky", "text": "Создай сад"})
+	u = readUniverse(a, "generated-world")
+	if len(u["objects"].([]any)) != 9 {
+		panic("agent did not create shared environment")
+	}
+	call(b, "telemetry.report", "client-metrics", map[string]any{"fps": 60, "ping_ms": 12, "frame_ms": 16.7, "draw_calls": 128, "triangles": 25000, "renderer": "webgl", "hidden": false})
+	metricsReply := call(a, "telemetry.get", "admin-metrics", map[string]any{})
+	var metrics struct {
+		Clients []map[string]any `json:"clients"`
+	}
+	check(json.Unmarshal(metricsReply.Payload, &metrics))
+	if len(metrics.Clients) != 2 {
+		panic("missing client telemetry rows")
+	}
+	foundMetrics := false
+	for _, c := range metrics.Clients {
+		if c["fps"] == float64(60) && c["ping_ms"] == float64(12) {
+			foundMetrics = true
+		}
+	}
+	if !foundMetrics {
+		panic("client metrics not delivered")
+	}
 	preview := call(a, "game.preview", "preview", map[string]any{"action": "repair_cooling", "expected_version": 1})
 	var forecast struct {
 		Allowed bool `json:"allowed"`
@@ -229,11 +271,15 @@ func main() {
 	if state["version"] != float64(2) {
 		panic("game progress lost")
 	}
+	u = readUniverse(a, "restored-universe")
+	if u["settings"].(map[string]any)["npc_count"] != float64(96) || len(u["objects"].([]any)) != 9 {
+		panic("universe lost after restart")
+	}
 	reply = call(a, "agent.talk", "fallback", map[string]string{"agent_id": "dzhanibekov", "text": "Объясни проще"})
 	check(json.Unmarshal(reply.Payload, &agent))
 	if agent.Mode == "model" || !strings.Contains(agent.Text, "охлажд") {
 		panic("missing-model fallback or persistent topic failed")
 	}
-	output := map[string]any{"compiled_host": "passed", "embedded_frontend_matches_source": "passed", "operation_forecast": "passed", "two_websocket_clients": "passed", "registration": "passed", "synchronized_resources": "passed", "idempotency": "passed", "sqlite_crash_restore": "passed", "session_restore": "passed", "actual_stdio_mcp": "passed", "shared_experiment_gamma": 1.25, "world_cache_ratio": float64(cached) / float64(plan.World), "unavailable_llm_fallback": "passed", "qa_fixture_excluded": "passed"}
+	output := map[string]any{"compiled_host": "passed", "shared_universe": "passed", "interactive_pickup_drop": "passed", "agent_world_command": "passed", "client_telemetry": "passed", "universe_restore": "passed", "embedded_frontend_matches_source": "passed", "operation_forecast": "passed", "two_websocket_clients": "passed", "registration": "passed", "synchronized_resources": "passed", "idempotency": "passed", "sqlite_crash_restore": "passed", "session_restore": "passed", "actual_stdio_mcp": "passed", "shared_experiment_gamma": 1.25, "world_cache_ratio": float64(cached) / float64(plan.World), "unavailable_llm_fallback": "passed", "qa_fixture_excluded": "passed"}
 	check(json.NewEncoder(os.Stdout).Encode(output))
 }

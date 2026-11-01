@@ -14,6 +14,8 @@ type Request struct {
 }
 
 type Reply struct {
+	Model          string      `json:"model,omitempty"`
+	FallbackReason string      `json:"fallback_reason,omitempty"`
 	ToolTransport  string      `json:"tool_transport,omitempty"`
 	AgentID        string      `json:"agent_id"`
 	Text           string      `json:"text"`

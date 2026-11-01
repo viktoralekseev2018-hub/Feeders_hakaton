@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"feeders/internal/crew"
@@ -91,12 +92,19 @@ func (s *Local) Talk(ctx context.Context, r Request) (Reply, error) {
 			err = errors.New("mission changed during inference")
 		}
 	}
+	fallbackReason := ""
+	if err != nil && s.modelEnabled {
+		fallbackReason = "Локальная модель не вернула проверенный ответ; использованы документы"
+		slog.Warn("local model fallback", "agent", r.AgentID, "model", s.model, "reason", err.Error())
+	}
 	if err != nil || reply.Mode == "" {
 		reply, err = s.fromKnowledge(ctx, r)
 		if err != nil {
 			return Reply{}, err
 		}
 	}
+	reply.Model = s.model
+	reply.FallbackReason = fallbackReason
 	if playing {
 		reply.MissionVersion = v.State.Version
 		reply.Analysis = s.analysis(ctx, r.AgentID, r.Text)

@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "sh scripts/preview.sh"
+    "dev": "sh scripts/preview.sh",
+    "test": "node scripts/test-auth-ui.mjs && node scripts/test-universe-ui.mjs && node scripts/test-universe-dom.mjs && node scripts/test-scene-state.mjs && node scripts/test-living-world.mjs && node scripts/test-interior.mjs"
   }
 }

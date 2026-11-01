@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"runtime"
 	"sync/atomic"
 	"testing"
 )
@@ -118,7 +119,13 @@ func TestRealMCPProcessStartsWorldFromModelToolCall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	local.WithMission(m).WithMCP(filepath.Join("..", "..", "bin", "mcp-tools"), viewFile, filepath.Join("..", "..", "knowledge")).WithWorldTools(world.URL, "test-only-capability")
+	mcpBinary := "mcp-tools"
+	if runtime.GOOS == "darwin" {
+		mcpBinary += "-macos-" + runtime.GOARCH
+	} else if runtime.GOOS == "windows" {
+		mcpBinary += ".exe"
+	}
+	local.WithMission(m).WithMCP(filepath.Join("..", "..", "bin", mcpBinary), viewFile, filepath.Join("..", "..", "knowledge")).WithWorldTools(world.URL, "test-only-capability")
 	service := agents.NewCrewService(local, nil)
 	reply, err := service.Talk(context.Background(), agents.Request{PlayerID: "alice", Scope: m.memoryScope("alice"), AgentID: "dzhanibekov", Text: "Покажи опыт со световыми часами"})
 	if err != nil || reply.Mode != "model" || modelCalls.Load() < 2 {

@@ -7,6 +7,15 @@ export class AuthScreen {
     this.onSuccess = onSuccess;
     this.register = location.pathname === '/register';
     this.busy = false;
+    // Adapt the terminal rail from the supplied FIZMA form to the ship's real
+    // username-based authentication. No demo mode and no extra email account.
+    const note = document.querySelector?.('.access-note');
+    if (note) {
+      const terminal = document.createElement('div');
+      terminal.className = 'fizma-terminal';
+      terminal.innerHTML = '<div class="fizma-terminal-heading">FIZMA / CREW ACCESS</div><p><i>&gt;</i>access: <strong>crew</strong></p><p><i>&gt;</i>progress: <strong>saved on host</strong></p><p><i>&gt;</i>world: <strong>shared</strong></p><p><i>&gt;</i>status: <strong id="fizma-auth-status">waiting for login</strong></p>';
+      note.replaceWith(terminal);
+    }
     $('auth-switch').onclick = () => this.setMode(!this.register);
     $('auth-login-tab').onclick = () => this.setMode(false);
     $('auth-register-tab').onclick = () => this.setMode(true);
@@ -38,6 +47,10 @@ export class AuthScreen {
     // Keep an invitation code when switching between login and registration.
     history.replaceState({}, '', (register ? '/register' : '/login') + location.search);
     $('password-confirm').value = '';
+    // Switching modes must not leave either password field visible.
+    for (const id of ['password', 'password-confirm']) $(id).type = 'password';
+    $('password-toggle').setAttribute('aria-label', 'Показать пароль');
+    $('password-toggle').setAttribute('aria-pressed', 'false');
     this.render();
     $('username').focus({preventScroll: true});
   }
@@ -45,7 +58,9 @@ export class AuthScreen {
   render() {
     const r = this.register;
     $('auth-title').textContent = r ? 'Ваше место в экипаже' : 'Вернуться на борт';
-    $('auth-code').textContent = r ? '02 / NEW CREW MEMBER' : '01 / CREW ACCESS';
+    $('auth-code').textContent = r ? '02 / CREATE ACCOUNT' : '01 / AUTHORIZATION';
+    const terminalStatus = $('fizma-auth-status');
+    if (terminalStatus) terminalStatus.textContent = r ? 'waiting for registration' : 'waiting for login';
     $('auth-subtitle').textContent = r ? 'Придумайте позывной. Впереди — ваша первая экспедиция и решения, которые изменят её исход.' : 'Ваша экспедиция ждёт. Войдите, чтобы продолжить с места остановки.';
     $('auth-submit').innerHTML = `<span>${r ? 'ПРИСОЕДИНИТЬСЯ К ЭКИПАЖУ' : 'ВОЙТИ НА КОРАБЛЬ'}</span><span aria-hidden="true">↗</span>`;
     $('auth-switch-caption').textContent = r ? 'Уже есть аккаунт?' : 'Первая экспедиция?';
