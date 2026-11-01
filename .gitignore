@@ -1,0 +1,26 @@
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# IDE and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build and temp
+dist/
+node_modules/
+temp/
+*.log
+
+# Host runtime state and local Go build cache
+/data/*
+!/data/.gitkeep
+/.cache/
+/bin/
+*.exe
+
+# Preview fixtures and procedural generation intermediates
+.preview-data/
+world_source/.build/
