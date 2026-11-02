@@ -19,6 +19,12 @@ import (
 	"sort"
 )
 
+// Keep nearby rooms resident before the player crosses a doorway. The former
+// 8% cache could not hold even the low-detail cryo + bridge + reactor assets.
+const worldBudgetRatio = .25
+const worldLimitRatio = .30
+const worldPrefetchRadius = 3
+
 type WorldResource struct {
 	ID   string `json:"id"`
 	Size int    `json:"size"`
@@ -30,11 +36,13 @@ type WorldLOD struct {
 	Deps   []string `json:"deps"`
 }
 type WorldChunk struct {
-	NPC  string   `json:"npc,omitempty"`
-	CX   int      `json:"cx"`
-	CZ   int      `json:"cz"`
-	Low  WorldLOD `json:"low"`
-	High WorldLOD `json:"high"`
+	NPC   string   `json:"npc,omitempty"`
+	Areas []string `json:"areas,omitempty"`
+	Role  string   `json:"role,omitempty"`
+	CX    int      `json:"cx"`
+	CZ    int      `json:"cz"`
+	Low   WorldLOD `json:"low"`
+	High  WorldLOD `json:"high"`
 }
 type WorldRoom struct {
 	ID   string  `json:"id"`
@@ -97,13 +105,6 @@ func (m *Module) WithWorld(dir string, a *auth.Handler) error {
 	if total != w.Bytes || w.ChunkSize <= 0 {
 		return fmt.Errorf("world manifest size mismatch")
 	}
-	// Preserve resource IDs and AOI streaming; relocate the authored biologist with the new room.
-	for i := range w.Chunks {
-		if w.Chunks[i].NPC == "ryazansky" {
-			w.Chunks[i].CX = -3
-			w.Chunks[i].CZ = -2
-		}
-	}
 	w.Rooms = nil
 	for _, a := range deck.Areas {
 		if a.Kind == "room" {
@@ -131,14 +132,14 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux) {
 		if _, ok := resolve(out, r); !ok {
 			return
 		}
-		server.JSON(out, 200, map[string]any{"version": w.Version, "world_bytes": w.Bytes, "budget": int(float64(w.Bytes) * .08), "limit": int(float64(w.Bytes) * .1), "chunk_size": w.ChunkSize, "rooms": w.Rooms})
+		server.JSON(out, 200, map[string]any{"version": w.Version, "world_bytes": w.Bytes, "budget": int(float64(w.Bytes) * worldBudgetRatio), "limit": int(float64(w.Bytes) * worldLimitRatio), "prefetch_radius": worldPrefetchRadius, "chunk_size": w.ChunkSize, "rooms": w.Rooms})
 	})
 	mux.HandleFunc("GET /api/world/interest", func(out http.ResponseWriter, r *http.Request) {
 		id, ok := resolve(out, r)
 		if !ok {
 			return
 		}
-		server.JSON(out, 200, m.worldPlan(id))
+		server.JSON(out, 200, m.worldPlanForView(id, r.URL.Query().Get("view")))
 	})
 	mux.HandleFunc("GET /api/world/resource/{id}", func(out http.ResponseWriter, r *http.Request) {
 		id, ok := resolve(out, r)
@@ -146,7 +147,7 @@ func (m *Module) RegisterRoutes(mux *http.ServeMux) {
 			return
 		}
 		requested := r.PathValue("id")
-		plan := m.worldPlan(id)
+		plan := m.worldPlanForView(id, r.URL.Query().Get("view"))
 		allowed := false
 		for _, v := range plan.Resources {
 			if v.ID == requested {
@@ -177,9 +178,22 @@ func (m *Module) worldPlan(id string) WorldPlan {
 	p := m.worldPosition(id)
 	return m.planAt(p)
 }
+
+// Overview can inspect a named compartment without teleporting the player.
+// Both the plan and resource authorization resolve the same bounded view.
+func (m *Module) worldPlanForView(id, view string) WorldPlan {
+	if view != "" {
+		for _, area := range deck.Areas {
+			if area.ID == view {
+				return m.planAt(model.Position{X: area.X, Y: 1.7, Z: area.Z})
+			}
+		}
+	}
+	return m.worldPlan(id)
+}
 func (m *Module) planAt(p model.Position) WorldPlan {
 	w := m.streamWorld
-	plan := WorldPlan{Version: w.Version, WorldBytes: w.Bytes, Budget: int(float64(w.Bytes) * .08), Background: w.Background, Position: p, Resources: []WorldResource{}, Chunks: []WorldLOD{}}
+	plan := WorldPlan{Version: w.Version, WorldBytes: w.Bytes, Budget: int(float64(w.Bytes) * worldBudgetRatio), Background: w.Background, Position: p, Resources: []WorldResource{}, Chunks: []WorldLOD{}}
 	used := map[string]bool{}
 	bytes := 0
 	add := func(lod WorldLOD) bool {
@@ -203,13 +217,112 @@ func (m *Module) planAt(p model.Position) WorldPlan {
 	}
 	add(w.Background)
 	cx, cz := int(math.Floor(p.X/float64(w.ChunkSize))), int(math.Floor(p.Z/float64(w.ChunkSize)))
+	// Close the current room and both ends of its adjoining passages. The
+	// architectural shell is admitted before optional equipment/texture detail.
+	areas := map[string]bool{}
+	occupied := map[string]bool{}
+	direct := map[string]bool{}
+	for _, area := range deck.Areas {
+		if deckContains(area, p.X, p.Z) {
+			areas[area.ID] = true
+			occupied[area.ID] = true
+		}
+	}
+	for hop := 0; hop < 2; hop++ {
+		next := map[string]bool{}
+		for id := range areas {
+			next[id] = true
+		}
+		for _, gate := range deck.Gates {
+			touches := false
+			for _, id := range gate.Areas {
+				if areas[id] {
+					touches = true
+				}
+			}
+			if touches {
+				for _, id := range gate.Areas {
+					next[id] = true
+				}
+			}
+		}
+		areas = next
+		if hop == 0 {
+			direct = next
+		}
+	}
 	near := []WorldChunk{}
+	inside := func(c WorldChunk) bool {
+		for _, id := range c.Areas {
+			if occupied[id] {
+				return true
+			}
+		}
+		return false
+	}
+	adjoining := func(c WorldChunk) bool {
+		for _, id := range c.Areas {
+			if direct[id] {
+				return true
+			}
+		}
+		return false
+	}
 	for _, c := range w.Chunks {
-		if abs(c.CX-cx) <= 1 && abs(c.CZ-cz) <= 1 {
+		shell := false
+		if c.Role == "shell" || c.Role == "ceiling" {
+			for _, id := range c.Areas {
+				if areas[id] {
+					shell = true
+				}
+			}
+		}
+		connected := false
+		for _, id := range c.Areas {
+			connected = connected || areas[id]
+		}
+		if connected || shell || abs(c.CX-cx) <= worldPrefetchRadius && abs(c.CZ-cz) <= worldPrefetchRadius {
 			near = append(near, c)
 		}
 	}
 	sort.Slice(near, func(i, j int) bool {
+		priority := func(c WorldChunk) int {
+			local := inside(c)
+			switch {
+			case local && (c.Role == "shell" || c.Role == "ceiling"):
+				return 0
+			case local && c.NPC != "":
+				return 1
+			case local && c.Role == "equipment":
+				return 2
+			case adjoining(c) && (c.Role == "shell" || c.Role == "ceiling"):
+				// Floors, walls and ceilings across a door must already be
+				// resident before crossing it. Decorative current-room panels
+				// must not exhaust the budget before this first neighbouring hop.
+				return 3
+			case adjoining(c) && (c.Role == "equipment" || c.NPC != ""):
+				return 4
+			case c.Role == "shell" || c.Role == "ceiling":
+				return 5
+			case local:
+				return 6
+			case c.Role == "equipment" || c.NPC != "":
+				return 7
+			default:
+				return 8
+			}
+		}
+		pi, pj := priority(near[i]), priority(near[j])
+		if pi != pj {
+			return pi < pj
+		}
+		si, sj := near[i].Role == "shell" || near[i].Role == "ceiling", near[j].Role == "shell" || near[j].Role == "ceiling"
+		if si != sj {
+			return si
+		}
+		if (near[i].NPC != "") != (near[j].NPC != "") {
+			return near[i].NPC != ""
+		}
 		di, dj := abs(near[i].CX-cx)+abs(near[i].CZ-cz), abs(near[j].CX-cx)+abs(near[j].CZ-cz)
 		if di == dj {
 			if near[i].NPC != "" && near[j].NPC == "" {
@@ -225,12 +338,50 @@ func (m *Module) planAt(p model.Position) WorldPlan {
 		}
 		return di < dj
 	})
-	// Admit all useful low-detail neighbours before spending spare budget on detail.
-	for i, c := range near {
-		if i == 0 && add(c.High) {
-			plan.Chunks = append(plan.Chunks, c.High)
-		} else if add(c.Low) {
+	// Admit low-detail neighbours first. Upgrade by replacing the dependency set,
+	// so obsolete low-detail textures never occupy the high-detail budget.
+	admitted := []WorldChunk{}
+	for _, c := range near {
+		if add(c.Low) {
 			plan.Chunks = append(plan.Chunks, c.Low)
+			admitted = append(admitted, c)
+		}
+	}
+	for index, c := range admitted {
+		// Keep the mandatory enclosure's resource IDs stable across cells. A
+		// low/high shell swap would detach a preloaded wall before its replacement
+		// arrives. Detail/equipment/NPC upgrades remain independent of this shell.
+		if c.Role == "shell" || c.Role == "ceiling" {
+			continue
+		}
+		if c.CX != cx || c.CZ != cz || c.High.Object == c.Low.Object {
+			continue
+		}
+		candidate := map[string]bool{}
+		for _, id := range w.Background.Deps {
+			candidate[id] = true
+		}
+		for n, lod := range plan.Chunks {
+			if n == index {
+				lod = c.High
+			}
+			for _, id := range lod.Deps {
+				candidate[id] = true
+			}
+		}
+		size := 0
+		for id := range candidate {
+			size += w.byID[id].Size
+		}
+		if size <= plan.Budget {
+			plan.Chunks[index] = c.High
+			used = candidate
+		}
+	}
+	plan.Resources = nil
+	for _, r := range w.Resources {
+		if used[r.ID] {
+			plan.Resources = append(plan.Resources, r)
 		}
 	}
 	return plan

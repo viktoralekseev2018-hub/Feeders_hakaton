@@ -43,8 +43,17 @@ type Hit struct {
 	Score float64 `json:"score"`
 }
 type SearchResult struct {
-	Status string `json:"status"`
-	Hits   []Hit  `json:"hits"`
+	Status    string    `json:"status"`
+	Hits      []Hit     `json:"hits"`
+	Retrieval Retrieval `json:"retrieval"`
+}
+
+// Retrieval reports the algorithm actually used for this particular search.
+// Configuring embeddings alone never makes a result hybrid.
+type Retrieval struct {
+	Mode           string `json:"mode"`
+	EmbeddingModel string `json:"embedding_model,omitempty"`
+	DegradedReason string `json:"degraded_reason,omitempty"`
 }
 type document struct {
 	chunk  Chunk
@@ -52,9 +61,10 @@ type document struct {
 	length int
 }
 type Store struct {
-	docs  []document
-	byID  map[string]int
-	facts map[string]bool
+	docs   []document
+	byID   map[string]int
+	facts  map[string]bool
+	hybrid *hybridRef
 }
 
 // Missing file is an explicit empty corpus. Invalid existing files fail startup.
@@ -113,7 +123,7 @@ func Load(path string) (*Store, error) {
 }
 
 func Read(r io.Reader) (*Store, error) {
-	s := &Store{byID: map[string]int{}}
+	s := &Store{byID: map[string]int{}, hybrid: &hybridRef{}}
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 4096), 128<<10)
 	line, total := 0, 0
@@ -269,10 +279,14 @@ func (s *Store) Sources(agent string) []Source {
 	return result
 }
 
-// Search uses BM25 over exact Unicode tokens, not embeddings or Russian stemming.
-// Statistics are computed only within the agent's allowed corpus.
+// Search filters permissions, agent and topic before either ranking. Without
+// WithHybrid it uses BM25; configured stores fuse actual semantic cosine ranks
+// and BM25 ranks. A failed embedding request is reported as an explicit fallback.
 func (s *Store) Search(ctx context.Context, agent, query, topic string, limit int) (SearchResult, error) {
-	out := SearchResult{Status: "no_matches", Hits: []Hit{}}
+	out := SearchResult{Status: "no_matches", Hits: []Hit{}, Retrieval: Retrieval{Mode: "bm25"}}
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
 	if _, ok := crew.Find(agent); !ok {
 		return out, errors.New("unknown agent")
 	}
@@ -289,13 +303,7 @@ func (s *Store) Search(ctx context.Context, agent, query, topic string, limit in
 		out.Status = "empty_corpus"
 		return out, nil
 	}
-	terms := map[string]bool{}
-	for _, t := range tokenize(query) {
-		terms[t] = true
-	}
 	docs := []document{}
-	df := map[string]int{}
-	total := 0
 	for _, d := range s.docs {
 		if err := ctx.Err(); err != nil {
 			return out, err
@@ -315,6 +323,47 @@ func (s *Store) Search(ctx context.Context, agent, query, topic string, limit in
 			}
 		}
 		docs = append(docs, d)
+	}
+	if len(docs) == 0 {
+		return out, nil
+	}
+	var err error
+	out.Hits, err = bm25(ctx, docs, query)
+	if err != nil {
+		return out, err
+	}
+	if index := s.hybridIndex(); index != nil {
+		out.Retrieval.EmbeddingModel = index.config.Model
+		semantic, embedErr := index.search(ctx, docs, query)
+		if ctx.Err() != nil {
+			return out, ctx.Err()
+		}
+		if embedErr != nil {
+			out.Retrieval.Mode = "bm25_fallback"
+			out.Retrieval.DegradedReason = errorCode(embedErr)
+		} else {
+			out.Retrieval.Mode = "hybrid"
+			out.Hits = fuseRanks(out.Hits, semantic, max(20, limit*4))
+		}
+	}
+	if len(out.Hits) > limit {
+		out.Hits = out.Hits[:limit]
+	}
+	if len(out.Hits) > 0 {
+		out.Status = "ok"
+	}
+	return out, nil
+}
+
+func bm25(ctx context.Context, docs []document, query string) ([]Hit, error) {
+	hits := []Hit{}
+	terms := map[string]bool{}
+	for _, t := range tokenize(query) {
+		terms[t] = true
+	}
+	df := map[string]int{}
+	total := 0
+	for _, d := range docs {
 		total += d.length
 		for t := range terms {
 			if d.terms[t] > 0 {
@@ -322,16 +371,13 @@ func (s *Store) Search(ctx context.Context, agent, query, topic string, limit in
 			}
 		}
 	}
-	if len(docs) == 0 {
-		return out, nil
-	}
 	avg := float64(total) / float64(len(docs))
 	if avg == 0 {
-		return out, nil
+		return hits, nil
 	}
 	for _, d := range docs {
 		if err := ctx.Err(); err != nil {
-			return out, err
+			return nil, err
 		}
 		score := 0.0
 		for t := range terms {
@@ -343,22 +389,11 @@ func (s *Store) Search(ctx context.Context, agent, query, topic string, limit in
 			score += idf * tf * 2.2 / (tf + 1.2*(0.25+0.75*float64(d.length)/avg))
 		}
 		if score > 0 {
-			out.Hits = append(out.Hits, Hit{clone(d.chunk), score})
+			hits = append(hits, Hit{clone(d.chunk), score})
 		}
 	}
-	sort.Slice(out.Hits, func(i, j int) bool {
-		if out.Hits[i].Score == out.Hits[j].Score {
-			return out.Hits[i].ID < out.Hits[j].ID
-		}
-		return out.Hits[i].Score > out.Hits[j].Score
-	})
-	if len(out.Hits) > limit {
-		out.Hits = out.Hits[:limit]
-	}
-	if len(out.Hits) > 0 {
-		out.Status = "ok"
-	}
-	return out, nil
+	sortHits(hits)
+	return hits, nil
 }
 
 // JSON returns data suitable for both MCP text content and Ollama tool messages.

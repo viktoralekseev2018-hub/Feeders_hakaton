@@ -9,17 +9,23 @@ import (
 )
 
 type DialogueMessage struct {
-	Role  string        `json:"role"`
-	Text  string        `json:"text"`
-	Reply *agents.Reply `json:"reply,omitempty"`
+	DialogueMode string        `json:"dialogue_mode,omitempty"`
+	Role         string        `json:"role"`
+	Text         string        `json:"text"`
+	Reply        *agents.Reply `json:"reply,omitempty"`
 }
 
 func (m *Module) dialogueHistory(ctx context.Context, s realtime.Session, e protocol.Envelope) {
 	var p struct {
-		AgentID string `json:"agent_id"`
+		AgentID      string `json:"agent_id"`
+		DialogueMode string `json:"dialogue_mode,omitempty"`
 	}
 	if protocol.DecodePayload(e.Payload, &p) != nil {
 		sendError(s, e, "invalid_payload", "Выберите наставника")
+		return
+	}
+	if !agents.ValidDialogueMode(p.DialogueMode) {
+		sendError(s, e, "invalid_dialogue_mode", "Выберите режим articles или casual")
 		return
 	}
 	m.roomMu.Lock()
@@ -27,11 +33,19 @@ func (m *Module) dialogueHistory(ctx context.Context, s realtime.Session, e prot
 	r := m.rooms[m.membership[s.User().ID]]
 	rows := []DialogueMessage{}
 	if r != nil {
-		if v := r.Dialogues[s.User().ID+"/"+p.AgentID]; v != nil {
+		if v := r.Dialogues[dialogueKey(s.User().ID, p.AgentID, p.DialogueMode)]; v != nil {
 			rows = v
 		}
 	}
-	s.Send("dialogue.history", e.RequestID, map[string]any{"messages": rows})
+	s.Send("dialogue.history", e.RequestID, map[string]any{"messages": rows, "dialogue_mode": p.DialogueMode})
+}
+
+func dialogueKey(player, agent, mode string) string {
+	key := player + "/" + agent
+	if mode != "" {
+		key += "/dialogue/" + mode
+	}
+	return key
 }
 func (m *Module) recordDialogue(id, scope, agent, text string, reply agents.Reply) error {
 	m.roomMu.Lock()
@@ -46,8 +60,8 @@ func (m *Module) recordDialogue(id, scope, agent, text string, reply agents.Repl
 	if r.Dialogues == nil {
 		r.Dialogues = map[string][]DialogueMessage{}
 	}
-	key := id + "/" + agent
-	rows := append(r.Dialogues[key], DialogueMessage{Role: "user", Text: text}, DialogueMessage{Role: "assistant", Text: reply.Text, Reply: &reply})
+	key := dialogueKey(id, agent, reply.DialogueMode)
+	rows := append(r.Dialogues[key], DialogueMessage{DialogueMode: reply.DialogueMode, Role: "user", Text: text}, DialogueMessage{DialogueMode: reply.DialogueMode, Role: "assistant", Text: reply.Text, Reply: &reply})
 	if len(rows) > 40 {
 		rows = rows[len(rows)-40:]
 	}

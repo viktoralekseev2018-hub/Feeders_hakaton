@@ -110,21 +110,34 @@ type Citation struct {
 
 // AgentTalkRequest is sent by the client when communicating with a crew member.
 type AgentTalkRequest struct {
-	AgentID string `json:"agent_id"`
-	Text    string `json:"text"`
+	AgentID      string `json:"agent_id"`
+	Text         string `json:"text"`
+	DialogueMode string `json:"dialogue_mode,omitempty"`
+}
+
+type Retrieval struct {
+	Mode           string `json:"mode"`
+	EmbeddingModel string `json:"embedding_model,omitempty"`
+	DegradedReason string `json:"degraded_reason,omitempty"`
 }
 
 // AgentReply is sent by the server with the AI's response and source citations.
 type AgentReply struct {
-	ToolTransport string          `json:"tool_transport,omitempty"`
-	AgentID       string          `json:"agent_id"`
-	AgentName     string          `json:"agent_name"`
-	Text          string          `json:"text"`
-	Citation      *Citation       `json:"citation,omitempty"`
-	Citations     []Citation      `json:"citations,omitempty"`
-	Mode          string          `json:"mode,omitempty"`
-	Evidence      json.RawMessage `json:"evidence,omitempty"`
-	Analysis      json.RawMessage `json:"analysis,omitempty"`
+	DialogueMode   string          `json:"dialogue_mode,omitempty"`
+	Retrieval      *Retrieval      `json:"retrieval,omitempty"`
+	Status         string          `json:"status,omitempty"`
+	Grounding      string          `json:"grounding,omitempty"`
+	Model          string          `json:"model,omitempty"`
+	FallbackReason string          `json:"fallback_reason,omitempty"`
+	ToolTransport  string          `json:"tool_transport,omitempty"`
+	AgentID        string          `json:"agent_id"`
+	AgentName      string          `json:"agent_name"`
+	Text           string          `json:"text"`
+	Citation       *Citation       `json:"citation,omitempty"`
+	Citations      []Citation      `json:"citations,omitempty"`
+	Mode           string          `json:"mode,omitempty"`
+	Evidence       json.RawMessage `json:"evidence,omitempty"`
+	Analysis       json.RawMessage `json:"analysis,omitempty"`
 }
 
 // GameActionRequest is sent by the client to propose or execute a cycle operation.

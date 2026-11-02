@@ -11,6 +11,7 @@ import (
 	"feeders/internal/crew"
 	"feeders/internal/mission"
 	"feeders/internal/rag"
+	"feeders/internal/retrievalconfig"
 	"feeders/pkg/protocol"
 )
 
@@ -156,7 +157,7 @@ func (c Catalog) Call(ctx context.Context, name string, args json.RawMessage) (a
 		if c.Store.Total() == 0 {
 			status = "empty_corpus"
 		}
-		return map[string]any{"status": status, "visible_chunks": c.Store.Total(), "chunks": c.Store.Total(), "agents": counts, "retrieval": "bm25_russian_suffixes", "reload": "restart process after replacing JSONL"}, nil
+		return map[string]any{"status": status, "visible_chunks": c.Store.Total(), "chunks": c.Store.Total(), "agents": counts, "retrieval": retrievalconfig.Status(c.Store), "reload": "restart process after replacing JSONL"}, nil
 	}
 	for _, p := range crew.All() {
 		switch name {

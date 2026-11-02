@@ -26,6 +26,16 @@ func (s *Local) WithMCP(binary, view, corpus string, prefixArgs ...string) *Loca
 // Each bounded child has a trusted player binding. The model cannot supply it.
 func (s *Local) search(ctx context.Context, r Request, query string) (rag.SearchResult, string, error) {
 	args := json.RawMessage(rag.JSON(map[string]any{"query": query, "limit": 3}))
+	// Explicit articles use the host's prepared shared hybrid index. Spawning a
+	// fresh MCP process per turn would repeatedly warm the embedding cache and
+	// could degrade a healthy host index to lexical-only results on a timeout.
+	if r.DialogueMode == DialogueArticles {
+		value, err := s.catalog.Call(ctx, r.AgentID+"_search", args)
+		if err != nil {
+			return rag.SearchResult{}, "", err
+		}
+		return value.(rag.SearchResult), "Локальный поиск", nil
+	}
 	if s.mcpBinary != "" {
 		if result, err := s.searchMCP(ctx, r, args); err == nil {
 			return result, "MCP stdio", nil

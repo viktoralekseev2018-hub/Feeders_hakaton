@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -27,7 +26,7 @@ func TestThreeCrewCorporaReachConfiguredModel(t *testing.T) {
 	} {
 		t.Run(tc.id, func(t *testing.T) {
 			var calls atomic.Int32
-			h := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			h := newModelHTTP(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls.Add(1)
 				var input struct {
 					Model    string    `json:"model"`
@@ -53,9 +52,18 @@ func TestThreeCrewCorporaReachConfiguredModel(t *testing.T) {
 				}
 				data := strings.SplitN(input.Messages[len(input.Messages)-1].Content, "\n", 2)
 				var found rag.SearchResult
-				if len(data) != 2 || json.Unmarshal([]byte(data[1]), &found) != nil || len(found.Hits) == 0 {
+				if len(data) != 2 || json.Unmarshal([]byte(data[1]), &found) != nil {
 					t.Error("no retrieved evidence in the model request")
 					w.WriteHeader(500)
+					return
+				}
+				if len(found.Hits) == 0 {
+					for _, m := range input.Messages {
+						if m.Role == "assistant" {
+							t.Error("other player's history leaked")
+						}
+					}
+					_ = json.NewEncoder(w).Encode(map[string]any{"message": message{Role: "assistant", Content: "О какой теме рассказать проще?"}})
 					return
 				}
 				for _, hit := range found.Hits {
@@ -71,11 +79,12 @@ func TestThreeCrewCorporaReachConfiguredModel(t *testing.T) {
 			}))
 			defer h.Close()
 			s, err := NewLocal(knowledge.Catalog{Store: store}, h.URL, "crew-test-model")
+			s.client.Transport = h
 			if err != nil {
 				t.Fatal(err)
 			}
 			for _, question := range []string{tc.query, "Объясни проще", "Подробнее"} {
-				reply, err := s.Talk(context.Background(), Request{"", "player-one", tc.id, question})
+				reply, err := s.Talk(context.Background(), Request{Scope: "", PlayerID: "player-one", AgentID: tc.id, Text: question})
 				if err != nil || reply.Mode != "model" || reply.Status != "grounded" || len(reply.Evidence) == 0 {
 					t.Fatalf("model path failed: mode=%s status=%s err=%v", reply.Mode, reply.Status, err)
 				}
@@ -83,8 +92,8 @@ func TestThreeCrewCorporaReachConfiguredModel(t *testing.T) {
 			if calls.Load() != 3 {
 				t.Fatalf("expected inference on question and two follow-ups, got %d", calls.Load())
 			}
-			reply, err := s.Talk(context.Background(), Request{"", "another-player", tc.id, "Объясни проще"})
-			if err != nil || reply.Status != "no_matches" || calls.Load() != 3 {
+			reply, err := s.Talk(context.Background(), Request{Scope: "", PlayerID: "another-player", AgentID: tc.id, Text: "Объясни проще"})
+			if err != nil || reply.Mode != "model" || reply.Grounding != "conversation" || calls.Load() != 4 {
 				t.Fatal("another player's topic leaked", reply, err)
 			}
 		})

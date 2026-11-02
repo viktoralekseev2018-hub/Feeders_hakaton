@@ -3,7 +3,6 @@ package npc
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -19,7 +18,7 @@ func TestScenarioModelUsesReadOnlyPlanTool(t *testing.T) {
 	m, _ := mission.New("")
 	_, _ = m.Create(context.Background(), "p", 1, nil)
 	var calls atomic.Int32
-	h := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := newModelHTTP(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if calls.Add(1) == 1 {
 			_, _ = w.Write([]byte(`{"message":{"role":"assistant","tool_calls":[{"function":{"name":"savinykh_rescue_plans","arguments":{}}}]}}`))
 			return
@@ -28,8 +27,9 @@ func TestScenarioModelUsesReadOnlyPlanTool(t *testing.T) {
 	}))
 	defer h.Close()
 	s, _ := NewLocal(knowledge.Catalog{Store: store}, h.URL, "qwen")
+	s.client.Transport = h
 	s.WithMission(m)
-	reply, err := s.Talk(context.Background(), Request{"", "p", mission.Captain, "Комбинированный план"})
+	reply, err := s.Talk(context.Background(), Request{Scope: "", PlayerID: "p", AgentID: mission.Captain, Text: "Комбинированный план"})
 	if err != nil || reply.Mode != "model" || calls.Load() != 2 {
 		t.Fatal(reply, err, calls.Load())
 	}
@@ -58,7 +58,7 @@ func TestFourAgentsAnswerOfflineFromScenario(t *testing.T) {
 	_, _ = m.Create(context.Background(), "p", 1, nil)
 	s, _ := NewLocal(knowledge.Catalog{Store: store}, "http://127.0.0.1:1", "qwen3:8b")
 	s.WithMission(m).WithoutModel()
-	for _, r := range []Request{{"", "p", mission.Captain, "Как выбрать комбинированный план спасения?"}, {"", "p", mission.Engineer, "Как восстановить охлаждение реактора?"}, {"", "p", mission.Biologist, "Что известно про инфекцию и пробу?"}, {"", "p", mission.Navigator, "Как восстановить архив и подготовить курс?"}} {
+	for _, r := range []Request{{Scope: "", PlayerID: "p", AgentID: mission.Captain, Text: "Как выбрать комбинированный план спасения?"}, {Scope: "", PlayerID: "p", AgentID: mission.Engineer, Text: "Как восстановить охлаждение реактора?"}, {Scope: "", PlayerID: "p", AgentID: mission.Biologist, Text: "Что известно про инфекцию и пробу?"}, {Scope: "", PlayerID: "p", AgentID: mission.Navigator, Text: "Как восстановить архив и подготовить курс?"}} {
 		reply, err := s.Talk(context.Background(), r)
 		if err != nil || reply.Mode != "knowledge_base" || reply.Analysis == nil || reply.MissionVersion != 1 || len(reply.Evidence) == 0 {
 			t.Fatal(r, reply, err)
@@ -74,32 +74,34 @@ func TestUnverifiedModelTextFallsBackWithoutSpoilers(t *testing.T) {
 	store, _ := rag.Load("../../knowledge")
 	m, _ := mission.New("")
 	_, _ = m.Create(context.Background(), "p", 1, nil)
-	h := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := newModelHTTP(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"message":{"role":"assistant","content":"Виноват микрометеорит. [scenario-briefing]"}}`))
 	}))
 	defer h.Close()
 	s, _ := NewLocal(knowledge.Catalog{Store: store}, h.URL, "qwen")
+	s.client.Transport = h
 	s.WithMission(m)
-	reply, err := s.Talk(context.Background(), Request{"", "p", mission.Captain, "Почему произошла авария?"})
+	reply, err := s.Talk(context.Background(), Request{Scope: "", PlayerID: "p", AgentID: mission.Captain, Text: "Почему произошла авария?"})
 	if err != nil || reply.Mode != "knowledge_base" || strings.Contains(reply.Text, "микрометеорит") {
 		t.Fatal(reply, err)
 	}
 }
 func TestTimeoutReturnsKnowledgeAndParentCancellationStillCancels(t *testing.T) {
 	stop := make(chan struct{})
-	h := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-stop }))
+	h := newModelHTTP(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-stop }))
 	defer h.Close()
 	defer close(stop)
 	s, _ := NewLocal(catalog(t, false), h.URL, "qwen")
+	s.client.Transport = h
 	s.client.Timeout = 30 * time.Millisecond
 	start := time.Now()
-	reply, err := s.Talk(context.Background(), Request{"", "p", "dzhanibekov", "Питание"})
+	reply, err := s.Talk(context.Background(), Request{Scope: "", PlayerID: "p", AgentID: "dzhanibekov", Text: "Питание"})
 	if err != nil || reply.Mode != "knowledge_base" || time.Since(start) > time.Second {
 		t.Fatal(reply, err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err = s.Talk(ctx, Request{"", "p", "dzhanibekov", "Питание"}); err == nil {
+	if _, err = s.Talk(ctx, Request{Scope: "", PlayerID: "p", AgentID: "dzhanibekov", Text: "Питание"}); err == nil {
 		t.Fatal("parent cancellation ignored")
 	}
 }

@@ -1,0 +1,98 @@
+{
+  "image_count": 9,
+  "concept_references": 8,
+  "layout_schematics": 1,
+  "images_copied_unchanged": true,
+  "images": [
+    {
+      "file": "images/00_style_reference.png",
+      "title": "Общий стиль — вариант № 5",
+      "description": "Светлый футуризм: материалы, цвет и плотность технических деталей.",
+      "kind": "concept_reference",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 3613494,
+      "sha256": "4c70f9d48dc15714c36aab6105a17a80dcf8635dafd40c693dc04f32efb87586"
+    },
+    {
+      "file": "images/01_bridge.png",
+      "title": "Мостик",
+      "description": "Консоли, рабочие места, окно, стены и потолок.",
+      "kind": "concept_reference",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 2925599,
+      "sha256": "aed9e491f086fe0c680d78d3718029a2a434a0cf8f21f715238c732e80428be8"
+    },
+    {
+      "file": "images/02_reactor.png",
+      "title": "Реакторный отсек",
+      "description": "Корпус реактора, опоры, трубопроводы и пост инженера.",
+      "kind": "concept_reference",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 2928557,
+      "sha256": "82f0c0994eaca5fafee2f31b74f4de05608512fa8fc1c265cd76241ed54307e2"
+    },
+    {
+      "file": "images/03_greenhouse.png",
+      "title": "Оранжерея",
+      "description": "Гидропонные столы, растения, полив и рабочая станция.",
+      "kind": "concept_reference",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 2742654,
+      "sha256": "56e2957285da12cd19ea6fa30c6a240c5ad7f084c94c23cbe2e8cde5dbba3934"
+    },
+    {
+      "file": "images/04_cryo.png",
+      "title": "Криоотсек",
+      "description": "Криокапсулы, остекление, шкафы и медицинские терминалы.",
+      "kind": "concept_reference",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 2833024,
+      "sha256": "8b79a35b470cebb93b3809183ab9cd0ed260820f0fe3099ad40c47bd82ba1eac"
+    },
+    {
+      "file": "images/05_corridors_doors.png",
+      "title": "Коридоры и двери",
+      "description": "Закрытые переходы, силовые рамы, дверные створки и подсветка.",
+      "kind": "concept_reference",
+      "width": 1672,
+      "height": 941,
+      "bytes": 2622088,
+      "sha256": "90b505c821ba75cfb28d450b76fa728ea86b49f5c8451d4695b7a39e98601366"
+    },
+    {
+      "file": "images/06_panoramic_window.png",
+      "title": "Панорамное окно",
+      "description": "Общий вид и детали многослойной рамы; вид на Юпитер и Европу.",
+      "kind": "concept_reference",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 2728655,
+      "sha256": "da5055b15dd0c022a3af3f77507a1b945e68081363ed0fc71a402b99266d2984"
+    },
+    {
+      "file": "images/07_closed_ship.png",
+      "title": "Закрытые объёмы корабля",
+      "description": "Дополнительный внешний вид для понимания крыши и связей отсеков.",
+      "kind": "concept_reference",
+      "width": 1672,
+      "height": 941,
+      "bytes": 2769498,
+      "sha256": "7455a7d33d055f14db9ad10931d00be8c30af3969989e5ecf6d4c984c396c30a"
+    },
+    {
+      "file": "layout/08_deck_plan.png",
+      "title": "План палубы",
+      "description": "Схема прежней версии проекта; двери и окно показаны как предложения.",
+      "kind": "layout_snapshot",
+      "width": 1560,
+      "height": 1100,
+      "bytes": 57581,
+      "sha256": "45adfe88be71d29bace190f952e4563c8c82eda033237889d514292004b5cbbd"
+    }
+  ]
+}

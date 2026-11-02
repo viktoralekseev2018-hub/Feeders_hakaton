@@ -197,15 +197,20 @@ func (m *Module) input(ctx context.Context, s realtime.Session, e protocol.Envel
 
 func (m *Module) talk(ctx context.Context, s realtime.Session, e protocol.Envelope) {
 	var input struct {
-		AgentID string `json:"agent_id"`
-		Text    string `json:"text"`
+		AgentID      string `json:"agent_id"`
+		Text         string `json:"text"`
+		DialogueMode string `json:"dialogue_mode,omitempty"`
 	}
 	if err := protocol.DecodePayload(e.Payload, &input); err != nil {
 		sendError(s, e, "invalid_payload", "Invalid agent.talk payload")
 		return
 	}
 
-	if m.talkUniverse(s, e, input.AgentID, input.Text) {
+	if !agents.ValidDialogueMode(input.DialogueMode) {
+		sendError(s, e, "invalid_dialogue_mode", "Выберите режим articles или casual")
+		return
+	}
+	if input.DialogueMode == "" && m.talkUniverse(s, e, input.AgentID, input.Text) {
 		return
 	}
 	if m.agents == nil {
@@ -243,12 +248,13 @@ func (m *Module) talk(ctx context.Context, s realtime.Session, e protocol.Envelo
 		talkCtx, cancel := context.WithTimeout(ctx, 70*time.Second)
 		defer cancel()
 		scope := m.memoryScope(id)
-		reply, err := m.agents.Talk(talkCtx, agents.Request{PlayerID: id, AgentID: input.AgentID, Text: input.Text, Scope: scope})
+		reply, err := m.agents.Talk(talkCtx, agents.Request{PlayerID: id, AgentID: input.AgentID, Text: input.Text, Scope: scope, DialogueMode: input.DialogueMode})
 		if err != nil {
 			sendError(s, e, "agent_error", err.Error())
 			return
 		}
 		if talkCtx.Err() == nil {
+			reply.DialogueMode = input.DialogueMode
 			if err := m.recordDialogue(id, scope, input.AgentID, input.Text, reply); err != nil {
 				sendError(s, e, "save_failed", "Не удалось сохранить диалог")
 				return

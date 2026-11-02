@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import {UniversePanel} from '../web/src/ui/UniversePanel.js';
+import {UniversePanel,findSpawnPoint,describeDoor} from '../web/src/ui/UniversePanel.js';
+import {layout,contains,walkable} from '../web/src/interior/DeckLayout.js';
 
 // A dependency-free HTML/DOM fixture for event wiring and dialog lifecycle.
 // It does not claim CSS layout, browser accessibility or rendering coverage.
@@ -42,9 +43,48 @@ assert.equal(panel.state.version,1);assert.equal(sceneCalls.length,sceneCount,'f
 await panel.open();assert.equal(panel.dialog.open,true);assert.equal(panel.dialog.querySelectorAll('[data-world-action]').length,2);assert.equal(panel.dialog.querySelectorAll('[data-universe-tab]').length,4);
 assert.ok(panel.body.textContent.includes('<test crate>'),'escaped object name is displayed as literal text');
 assert.equal(panel.body.querySelector('test'),null,'an object name cannot create HTML elements');
+const fixedDoor={id:'door-cryo',kind:'door',name:'Крио',x:-10,y:0,z:0,open:true,motion_at:Date.now()-layout.doorDuration+200};
+state.objects.push(fixedDoor);state.version++;emit('universe.state',clone(state));
+const actionFor=id=>panel.body.querySelectorAll('[data-world-action]').find(button=>button.dataset.objectId===id);
+assert.ok(!panel.body.querySelectorAll('[data-world-remove]').some(button=>button.dataset.worldRemove==='door-cryo'),'architectural door cannot be offered for deletion');
+assert.ok(panel.body.querySelectorAll('[data-world-remove]').some(button=>button.dataset.worldRemove==='door-1'),'owner can still delete a placed door');
+assert.match(panel.body.textContent,/Часть корпуса/);
+assert.match(actionFor('door-cryo').textContent,/Открывается/);assert.ok('disabled' in actionFor('door-cryo').attrs);
+await new Promise(resolve=>setTimeout(resolve,300));
+assert.equal(actionFor('door-cryo').textContent,'Закрыть');assert.ok(!('disabled' in actionFor('door-cryo').attrs),'animation end re-enables the door without another server push');
+fixedDoor.locked='Нет питания';state.version++;emit('universe.state',clone(state));
+assert.match(actionFor('door-cryo').textContent,/Заблокирована: Нет питания/);assert.ok('disabled' in actionFor('door-cryo').attrs);
+assert.equal(describeDoor({open:false,motion_at:100},200).status,'Закрывается…');
+assert.equal(describeDoor({open:false,motion_at:100},2000).status,'Закрыта');
+assert.equal(describeDoor({open:true,motion_at:100},2000).status,'Открыта');
+delete fixedDoor.locked;
 const tab=name=>{panel.dialog.querySelectorAll('[data-universe-tab]').find(button=>button.dataset.universeTab===name).onclick();};
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
-tab('settings');const field=panel.body.querySelector('#world-npc');field.value='90';
+tab('settings');
+const compartments=layout.areas.filter(area=>area.kind==='room');
+assert.equal(compartments.length,7);
+assert.deepEqual(panel.body.querySelector('#world-spawn-room').querySelectorAll('option').map(option=>option.value),compartments.map(area=>area.id));
+for(const area of compartments) {
+  for(const kind of ['door','crate','plant','beacon']) {
+    const point=findSpawnPoint(area.id,state.objects,kind);
+    assert.ok(point,area.id+' has a safe position for '+kind);
+    const clearance=kind==='door'?1.6:kind==='plant'?1:.8;
+    assert.ok(contains(area,point.x,point.z,clearance),'object stays in selected compartment');
+    assert.ok(walkable(point.x,point.z,clearance),'object footprint avoids architectural collisions');
+    assert.ok(!layout.gates.some(gate=>Math.hypot(point.x-gate.x,point.z-gate.z)<clearance+1.2),'object avoids doorways');
+    const shifted=findSpawnPoint(area.id,[...state.objects,{id:'occupied',kind,x:point.x,z:point.z}],kind);
+    assert.ok(!shifted||shifted.x!==point.x||shifted.z!==point.z,'a second object avoids the occupied location');
+  }
+  panel.body.querySelector('#world-spawn-room').value=area.id;
+  panel.body.querySelector('#world-spawn-kind').value='crate';
+  panel.body.querySelector('#universe-spawn-form').onsubmit({preventDefault(){}});await settle();
+  const sent=calls.findLast(call=>call.type==='universe.admin').payload.spawn;
+  assert.ok(contains(area,sent.x,sent.z),'actual form submits selected room '+area.id);
+  assert.ok(walkable(sent.x,sent.z,.8));
+}
+assert.equal(findSpawnPoint('missing',[]),null,'unknown room never spawns elsewhere');
+panel.renderSettings(); // Reopen the settings draft after the seven spawn revisions.
+const field=panel.body.querySelector('#world-npc');field.value='90';
 await panel.onRoom();assert.equal(panel.body.querySelector('#world-npc'),field,'ordinary room snapshots preserve edited form nodes');
 panel.body.querySelector('#universe-settings-form').onsubmit({preventDefault(){}});await settle();assert.equal(state.settings.npc_count,90);
 // While the owner edits NPC count, another player changes lighting through an agent.
@@ -75,4 +115,4 @@ room=null;await panel.onRoom();assert.equal(panel.dialog.open,false);assert.equa
 emit('universe.state',clone(state));emit('telemetry.state',clone(metrics));assert.equal(panel.state,null);assert.equal(panel.metrics,null,'late messages cannot restore logged-out state');
 panel.dispose();assert.equal(body.querySelector('#universe-dialog'),null);assert.equal(body.querySelector('#universe-button'),null);
 assert.ok([...listeners.values()].every(set=>set.size===0));
-console.log('Universe DOM fixture: all tabs, live metrics, settings preservation, commands, ownership change, safe text, logout reset, disposal — passed (no browser layout assertions)');
+console.log('Universe DOM fixture: seven safe room spawns, architectural door protection, moving/locked states and timer, all tabs, live metrics, settings preservation, commands, ownership change, safe text, logout reset, disposal — passed (no browser layout assertions)');

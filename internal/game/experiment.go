@@ -35,6 +35,14 @@ type Experiment struct {
 }
 
 func (m *Module) EnableWorldTools(key string) { m.worldToolKey = key }
+
+// WorldToolsHandler is bound only on a separate loopback HTTP listener. It is
+// never reachable through the public/TLS application listener or its tunnel.
+func (m *Module) WorldToolsHandler() http.Handler {
+	mux := http.NewServeMux()
+	m.registerExperimentHTTP(mux)
+	return mux
+}
 func (m *Module) startExperiment(id string) (*Experiment, error) {
 	m.roomMu.Lock()
 	r := m.rooms[m.membership[id]]

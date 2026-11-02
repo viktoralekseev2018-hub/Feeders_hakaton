@@ -3,8 +3,10 @@ package app
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -23,15 +25,44 @@ import (
 	"feeders/internal/npc"
 	"feeders/internal/rag"
 	"feeders/internal/realtime"
+	"feeders/internal/retrievalconfig"
 	"feeders/internal/server"
+	"feeders/internal/share"
 	"feeders/internal/storage"
 	"feeders/web"
 )
 
-func run(log *slog.Logger) error {
+func run(log *slog.Logger, shared bool) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
+	}
+	var connector string
+	if shared {
+		if cfg.PublicURL != "" || cfg.TLSCertFile != "" {
+			return fmt.Errorf("--share creates its own HTTPS URL; unset PUBLIC_URL, TLS_CERT_FILE and TLS_KEY_FILE")
+		}
+		connector, err = share.FindBinary()
+		if err != nil {
+			return err
+		}
+		cfg.TrustProxy = true
+		_, port, _ := net.SplitHostPort(cfg.Addr)
+		cfg.Addr = net.JoinHostPort("127.0.0.1", port)
+	}
+	if cfg.PublicURL != "" && cfg.TLSCertFile == "" && !cfg.TrustProxy {
+		return fmt.Errorf("PUBLIC_URL requires TLS_CERT_FILE/TLS_KEY_FILE or TRUST_PROXY=true for a local HTTPS proxy")
+	}
+	access, err := server.NewPublicAccess(cfg.PublicURL, cfg.TrustProxy)
+	if err != nil {
+		return err
+	}
+	var certificate tls.Certificate
+	if cfg.TLSCertFile != "" {
+		certificate, err = tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
+		if err != nil {
+			return fmt.Errorf("HTTPS certificate: %w", err)
+		}
 	}
 	repo, err := storage.NewSQLiteStore(cfg.DataDir)
 	if err != nil {
@@ -79,6 +110,24 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	if err := retrievalconfig.Configure(corpus, cfg.DataDir); err != nil {
+		return err
+	}
+	if corpus.HybridStatus().Configured {
+		prepared := retrievalconfig.PrepareAsync(ctx, corpus)
+		go func() {
+			prepareErr := <-prepared
+			if ctx.Err() != nil {
+				return
+			}
+			status := retrievalconfig.Status(corpus)
+			if prepareErr != nil {
+				log.Warn("article semantic index unavailable; BM25 remains available", "code", status.Code, "model", status.Model)
+			} else {
+				log.Info("article semantic index prepared", "code", status.Code, "model", status.Model)
+			}
+		}()
+	}
 	local, err := npc.NewLocal(knowledge.Catalog{Store: corpus, ScenarioOverride: game.CallCrewTool}, envOr("OLLAMA_URL", "http://127.0.0.1:11434"), envOr("OLLAMA_MODEL", "qwen3:4b-instruct-2507-q4_K_M"))
 	if err != nil {
 		return err
@@ -116,24 +165,69 @@ func run(log *slog.Logger) error {
 	gameModule.EnableWorldTools(worldKey)
 	httpServer := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           qaHandler(server.New(files, authHandler, hub, gameModule), authHandler),
+		Handler:           access.Wrap(qaHandler(server.New(files, authHandler, hub, gameModule, &agentStatus{auth: authHandler, model: local, retrieval: corpus}), authHandler)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       60 * time.Second,
 		MaxHeaderBytes:    16 << 10,
 	}
+	if cfg.TLSCertFile != "" {
+		httpServer.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{certificate}}
+	}
+	defer httpServer.Close()
 
 	listener, err := net.Listen("tcp", cfg.Addr)
 	if err != nil {
 		return err
 	}
 
-	_, hostPort, _ := net.SplitHostPort(listener.Addr().String())
-	local.WithWorldTools("http://127.0.0.1:"+hostPort, worldKey)
-	errs := make(chan error, 1)
-	go func() { errs <- httpServer.Serve(listener) }()
+	defer listener.Close()
+	toolListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return err
+	}
+	toolServer := &http.Server{Handler: gameModule.WorldToolsHandler(), ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second, IdleTimeout: 15 * time.Second, MaxHeaderBytes: 8 << 10}
+	defer toolServer.Close()
+	local.WithWorldTools("http://"+toolListener.Addr().String(), worldKey)
+	errs := make(chan error, 2)
+	go func() { errs <- toolServer.Serve(toolListener) }()
+	go func() {
+		if cfg.TLSCertFile != "" {
+			errs <- httpServer.ServeTLS(listener, "", "")
+		} else {
+			errs <- httpServer.Serve(listener)
+		}
+	}()
 	log.Info("host ready", "address", listener.Addr(), "data_dir", cfg.DataDir, "protocol_version", 1, "world_enabled", true, "simulation_hz", 20, "ai_enabled", true)
+	var tunnel *share.Tunnel
+	var tunnelDone <-chan error
+	if shared {
+		_, port, _ := net.SplitHostPort(listener.Addr().String())
+		tunnel, err = share.Start(ctx, connector, "http://127.0.0.1:"+port, func(address string) {
+			if e := access.SetPublicURL(address); e != nil {
+				log.Error("invalid HTTPS link", "error", e)
+				return
+			}
+			log.Info("HTTPS invitation ready", "url", address)
+			fmt.Printf("\nОткройте %s — создайте экспедицию и нажмите «Пригласить».\nДругому игроку нужен только браузер. Остановка: Ctrl+C.\n\n", address)
+		}, os.Stderr)
+		if err != nil {
+			return err
+		}
+		defer tunnel.Stop()
+		tunnelDone = tunnel.Done
+		log.Info("waiting for public HTTPS invitation")
+	} else if cfg.PublicURL != "" {
+		log.Info("public invitation configured", "url", cfg.PublicURL)
+	} else {
+		scheme := "http"
+		if cfg.TLSCertFile != "" {
+			scheme = "https"
+		}
+		_, port, _ := net.SplitHostPort(listener.Addr().String())
+		log.Info("open game in browser", "url", scheme+"://localhost:"+port)
+	}
 
 	select {
 	case <-ctx.Done():
@@ -141,7 +235,12 @@ func run(log *slog.Logger) error {
 		if errors.Is(err, http.ErrServerClosed) {
 			err = nil
 		}
+	case tunnelErr := <-tunnelDone:
+		if ctx.Err() == nil {
+			err = fmt.Errorf("HTTPS connector stopped: %v; restart --share to get a new link", tunnelErr)
+		}
 	}
+	stop()
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

@@ -25,3 +25,7 @@ temp/
 # Preview fixtures and procedural generation intermediates
 .preview-data/
 world_source/.build/
+
+# Heavy archives
+FIZMA.zip
+

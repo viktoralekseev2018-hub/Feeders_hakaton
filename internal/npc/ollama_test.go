@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -25,21 +24,22 @@ func catalog(t *testing.T, empty bool) knowledge.Catalog {
 	}
 	return knowledge.Catalog{Store: s}
 }
-func TestNoCorpusAndNoMatchesNeverCallModel(t *testing.T) {
+func TestNoCorpusAndNoMatchesStillAttemptModel(t *testing.T) {
 	for _, empty := range []bool{true, false} {
 		var calls atomic.Int32
-		h := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1); w.WriteHeader(500) }))
+		h := newModelHTTP(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1); w.WriteHeader(500) }))
 		s, _ := NewLocal(catalog(t, empty), h.URL, "test-model")
-		reply, err := s.Talk(context.Background(), Request{"", "p", "dzhanibekov", "Неизвестно"})
+		s.client.Transport = h
+		reply, err := s.Talk(context.Background(), Request{Scope: "", PlayerID: "p", AgentID: "dzhanibekov", Text: "Неизвестно"})
 		h.Close()
-		if err != nil || calls.Load() != 0 || reply.Text == "" {
+		if err != nil || calls.Load() != 1 || reply.Text == "" {
 			t.Fatal(reply, err, calls.Load())
 		}
 	}
 }
 func TestToolRoundTripAndIsolatedHistory(t *testing.T) {
 	var calls atomic.Int32
-	h := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := newModelHTTP(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var input struct {
 			Model string `json:"model"`
 			Tools []struct {
@@ -79,8 +79,9 @@ func TestToolRoundTripAndIsolatedHistory(t *testing.T) {
 	}))
 	defer h.Close()
 	s, _ := NewLocal(catalog(t, false), h.URL, "configured-qwen")
+	s.client.Transport = h
 	for _, player := range []string{"p1", "p2"} {
-		reply, err := s.Talk(context.Background(), Request{"", player, "dzhanibekov", "Питание"})
+		reply, err := s.Talk(context.Background(), Request{Scope: "", PlayerID: player, AgentID: "dzhanibekov", Text: "Питание"})
 		if err != nil || reply.Status != "grounded" || len(reply.Evidence) != 1 {
 			t.Fatal(reply, err)
 		}
@@ -91,9 +92,10 @@ func TestToolRoundTripAndIsolatedHistory(t *testing.T) {
 }
 func TestRejectCrossRoleToolAndModelFailures(t *testing.T) {
 	for _, body := range []string{`{"message":{"role":"assistant","tool_calls":[{"function":{"name":"ryazansky_search","arguments":{"query":"x"}}}]}}`, `{"message":{"role":"assistant","content":"Ответ без ссылки"}}`, `not json`, `{"error":"unavailable"}`} {
-		h := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) }))
+		h := newModelHTTP(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) }))
 		s, _ := NewLocal(catalog(t, false), h.URL, "test")
-		if reply, err := s.Talk(context.Background(), Request{"", "p", "dzhanibekov", "Питание"}); err != nil || reply.Mode != "knowledge_base" || reply.Status != "grounded" {
+		s.client.Transport = h
+		if reply, err := s.Talk(context.Background(), Request{Scope: "", PlayerID: "p", AgentID: "dzhanibekov", Text: "Питание"}); err != nil || reply.Mode != "knowledge_base" || reply.Status != "grounded" {
 			t.Error("expected safe knowledge fallback", reply, err)
 		}
 		h.Close()
@@ -102,14 +104,18 @@ func TestRejectCrossRoleToolAndModelFailures(t *testing.T) {
 func TestCancelAndBusy(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
-	h := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { close(started); <-release }))
+	h := newModelHTTP(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { close(started); <-release }))
 	defer h.Close()
 	s, _ := NewLocal(catalog(t, false), h.URL, "test")
+	s.client.Transport = h
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { _, err := s.Talk(ctx, Request{"", "p", "dzhanibekov", "Питание"}); done <- err }()
+	go func() {
+		_, err := s.Talk(ctx, Request{Scope: "", PlayerID: "p", AgentID: "dzhanibekov", Text: "Питание"})
+		done <- err
+	}()
 	<-started
-	if _, err := s.Talk(context.Background(), Request{"", "p", "dzhanibekov", "Питание"}); err != ErrBusy {
+	if _, err := s.Talk(context.Background(), Request{Scope: "", PlayerID: "p", AgentID: "dzhanibekov", Text: "Питание"}); err != ErrBusy {
 		t.Fatal(err)
 	}
 	cancel()

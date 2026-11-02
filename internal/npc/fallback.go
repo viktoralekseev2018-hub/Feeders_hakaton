@@ -18,13 +18,16 @@ func (s *Local) WithMission(m ViewSource) *Local { s.missions = m; return s }
 func (s *Local) WithoutModel() *Local            { s.modelEnabled = false; return s }
 
 func (s *Local) Talk(ctx context.Context, r Request) (Reply, error) {
+	if !ValidDialogueMode(r.DialogueMode) {
+		return Reply{}, errors.New("invalid dialogue_mode: use articles or casual")
+	}
 	if _, ok := crew.Find(r.AgentID); !ok || strings.TrimSpace(r.PlayerID) == "" || len(r.PlayerID) > 128 || strings.TrimSpace(r.Text) == "" || len(r.Text) > 2048 {
 		return Reply{}, errors.New("invalid player, agent or text")
 	}
 	if err := ctx.Err(); err != nil {
 		return Reply{}, err
 	}
-	k := key{r.memoryPlayer(), r.AgentID}
+	k := r.memoryKey()
 	s.mu.Lock()
 	if s.active[k] {
 		s.mu.Unlock()
@@ -41,7 +44,7 @@ func (s *Local) Talk(ctx context.Context, r Request) (Reply, error) {
 		return Reply{}, ctx.Err()
 	}
 	defer func() { s.mu.Lock(); delete(s.active, k); s.mu.Unlock(); <-s.slots }()
-	if s.missions != nil {
+	if s.missions != nil && r.DialogueMode != DialogueCasual {
 		if v, err := s.missions.View(r.PlayerID); err == nil {
 			ctx = mission.WithView(ctx, v)
 		} else if !errors.Is(err, mission.ErrNotJoined) {
@@ -49,23 +52,39 @@ func (s *Local) Talk(ctx context.Context, r Request) (Reply, error) {
 		}
 	}
 	var err error
-	ctx, err = s.catalog.Bind(ctx)
-	if err != nil {
-		return Reply{}, err
+	if r.DialogueMode != DialogueCasual {
+		ctx, err = s.catalog.Bind(ctx)
+		if err != nil {
+			return Reply{}, err
+		}
 	}
 	v, playing := mission.FromContext(ctx)
+	playing = playing && r.DialogueMode != DialogueCasual
 	if playing {
 		scope := fmt.Sprint(v.State.Version) + ":" + v.AccessKey()
 		s.mu.Lock()
 		old := s.history[k]
-		if old.scope != scope && r.Scope == "" {
+		if old.scope != scope && (r.Scope == "" || previousAccessKey(old.scope) != v.AccessKey()) {
 			delete(s.history, k)
 		}
 		s.mu.Unlock()
-
+	} else {
+		// A formerly joined actor must not keep mission-only facts in the
+		// model's conversational context after leaving that access scope.
+		s.mu.Lock()
+		if s.history[k].scope != "" {
+			delete(s.history, k)
+		}
+		s.mu.Unlock()
 	}
 	var reply Reply
-	if isFollowup(r.Text) && s.retrievalQuery(r) == r.Text {
+	if r.DialogueMode == DialogueCasual {
+		if s.modelEnabled {
+			reply, err = s.talkCasual(ctx, r)
+		} else {
+			err = &modelError{code: "disabled", message: "Модель выключена на хосте. Для свободного общения перезапустите игру с OLLAMA_ENABLED=true."}
+		}
+	} else if r.DialogueMode == "" && !s.modelEnabled && isFollowup(r.Text) && s.retrievalQuery(r) == r.Text {
 		reply = Reply{AgentID: r.AgentID, Text: "Сначала задайте вопрос по теме, затем я смогу объяснить его подробнее.", Status: "no_matches", Mode: "knowledge_base", Evidence: []rag.Chunk{}}
 	} else if s.modelEnabled {
 		reply, err = s.talkModel(ctx, r)
@@ -83,9 +102,9 @@ func (s *Local) Talk(ctx context.Context, r Request) (Reply, error) {
 		if viewErr != nil {
 			return Reply{}, viewErr
 		}
-		if current.State.Version != v.State.Version {
+		if current.State.Version != v.State.Version || current.AccessKey() != v.AccessKey() {
 			s.mu.Lock()
-			delete(s.history, key{r.memoryPlayer(), r.AgentID})
+			delete(s.history, r.memoryKey())
 			s.mu.Unlock()
 			v = current
 			ctx = mission.WithView(ctx, v)
@@ -93,8 +112,12 @@ func (s *Local) Talk(ctx context.Context, r Request) (Reply, error) {
 		}
 	}
 	fallbackReason := ""
-	if err != nil && s.modelEnabled {
-		fallbackReason = "Локальная модель не вернула проверенный ответ; использованы документы"
+	if err != nil && r.DialogueMode == DialogueCasual {
+		fallbackReason = casualFailureReason(err)
+		reply = Reply{AgentID: r.AgentID, Text: fallbackReason, Mode: "unavailable", Status: "model_unavailable", Grounding: "none"}
+		err = nil
+	} else if err != nil && s.modelEnabled {
+		fallbackReason = modelFallbackReason(err)
 		slog.Warn("local model fallback", "agent", r.AgentID, "model", s.model, "reason", err.Error())
 	}
 	if err != nil || reply.Mode == "" {
@@ -104,8 +127,9 @@ func (s *Local) Talk(ctx context.Context, r Request) (Reply, error) {
 		}
 	}
 	reply.Model = s.model
+	reply.DialogueMode = r.DialogueMode
 	reply.FallbackReason = fallbackReason
-	if playing {
+	if playing && r.DialogueMode == "" {
 		reply.MissionVersion = v.State.Version
 		reply.Analysis = s.analysis(ctx, r.AgentID, r.Text)
 		if reply.Status == "no_matches" || reply.Status == "empty_corpus" {
@@ -113,13 +137,18 @@ func (s *Local) Talk(ctx context.Context, r Request) (Reply, error) {
 			reply.Status = "rules"
 			reply.Mode = "rules"
 		}
-		// State and numerical advice are always rendered from rules, never inferred.
-		reply.Text = mission.Summary(v) + "\n" + reply.Text
+		// State and numerical advice live in authoritative analysis and the HUD.
+		// Do not prepend a resource report to every conversational greeting.
+		if reply.Mode != "model" {
+			reply.Text = mission.Summary(v) + "\n" + reply.Text
+		}
 	}
 	s.mu.Lock()
 	previous := append([]message(nil), s.history[k].messages...)
 	s.mu.Unlock()
-	s.remember(k, append(previous, message{Role: "user", Content: r.Text}, message{Role: "assistant", Content: reply.Text}))
+	if reply.Mode != "unavailable" {
+		s.remember(k, append(previous, message{Role: "user", Content: r.Text}, message{Role: "assistant", Content: reply.Text}))
+	}
 	if playing {
 		s.mu.Lock()
 		old := s.history[k]
@@ -144,8 +173,11 @@ func (s *Local) fromKnowledge(ctx context.Context, r Request) (Reply, error) {
 		return Reply{}, err
 	}
 
-	reply := Reply{AgentID: r.AgentID, Status: found.Status, Mode: "knowledge_base", Evidence: []rag.Chunk{}, ToolTransport: transport}
+	reply := Reply{AgentID: r.AgentID, Status: found.Status, Mode: "knowledge_base", Grounding: "sources", Evidence: []rag.Chunk{}, ToolTransport: transport, Retrieval: &found.Retrieval}
 	if found.Status != "ok" {
+		if r.DialogueMode == DialogueArticles {
+			return noArticleSources(reply), nil
+		}
 		if found.Status == "empty_corpus" {
 			reply.Text = "Материалы для этого персонажа ещё не загружены."
 		} else {
@@ -180,17 +212,17 @@ func (s *Local) fromKnowledge(ctx context.Context, r Request) (Reply, error) {
 // matches no source. It must also never borrow another player's conversation.
 func (s *Local) retrievalQuery(r Request) string {
 	query := r.Text
-	if len(strings.Fields(query)) > 3 {
+	if !isFollowup(query) {
 		return query
 	}
 	s.mu.Lock()
-	old := append([]message(nil), s.history[key{r.memoryPlayer(), r.AgentID}].messages...)
+	old := append([]message(nil), s.history[r.memoryKey()].messages...)
 	s.mu.Unlock()
 	for i := len(old) - 1; i >= 0; i-- {
 		if old[i].Role != "user" {
 			continue
 		}
-		if isFollowup(old[i].Content) {
+		if isFollowup(old[i].Content) || socialQuestion(old[i].Content) {
 			continue
 		}
 		if combined := query + " " + old[i].Content; len(combined) <= 2048 {
@@ -203,7 +235,7 @@ func (s *Local) retrievalQuery(r Request) string {
 
 func isFollowup(text string) bool {
 	switch strings.Trim(strings.ToLower(strings.TrimSpace(text)), ".!?") {
-	case "объясни проще", "проще", "подробнее", "продолжи", "почему":
+	case "объясни проще", "проще", "подробнее", "продолжи", "почему", "а почему", "почему так", "почему это важно", "как это работает", "объясни подробнее", "расскажи подробнее", "что это значит", "а дальше", "и дальше", "дальше", "поясни", "повтори", "объясни это":
 		return true
 	}
 	return false
@@ -244,8 +276,8 @@ func (s *Local) analysis(ctx context.Context, id, text string) map[string]any {
 	return out
 }
 
-// Mission-mode prose is restricted to verbatim sentences selected from visible
-// RAG. This prevents a pretrained model from guessing the game-master's secret.
+// Investigation prose is restricted to complete, verbatim sentences selected
+// from visible RAG; negations cannot be stripped to invent a confirmed clue.
 func extractive(answer string, evidence []rag.Chunk) bool {
 	text := citationPattern.ReplaceAllString(answer, "")
 	normalize := func(s string) string { return strings.Join(strings.Fields(s), " ") }

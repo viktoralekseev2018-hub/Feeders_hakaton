@@ -4,6 +4,9 @@ import {layout,doorProgress,doorBlocks,walkable,roomAt} from '../interior/DeckLa
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const unit = new THREE.Vector3(1, 1, 1);
 const roomCenters = [[-16, 0], [0, 0], [17, 0], [-16, -17]];
+const uniforms=[0x466986,0x686f78,0x4c796a,0x566582];
+const skinTones=[0xd1ab8d,0xb88c6a,0x91694e,0xdfbda0];
+const hairColors=[0x49372d,0x292c30,0x7b6c59,0x51473e];
 
 // The server owns objects/settings. Crowd motion is a cheap, deterministic visual
 // simulation: these residents never call an agent or modify mission resources.
@@ -43,13 +46,26 @@ export class LivingWorld {
 
   geometry(kind) {
     if (!this.geometries.has(kind)) {
-      const geo = kind === 'sphere' ? new THREE.SphereGeometry(1, 10, 8)
+      const geo = kind === 'torso' ? new THREE.LatheGeometry([new THREE.Vector2(.37,-.5),new THREE.Vector2(.4,-.3),new THREE.Vector2(.43,.1),new THREE.Vector2(.5,.36),new THREE.Vector2(.36,.5)],12)
+        : kind === 'limb' ? new THREE.CapsuleGeometry(.5,.4,3,8).scale(1,1/1.4,1)
+        : kind === 'hair' ? new THREE.SphereGeometry(1,12,8,0,Math.PI*2,0,Math.PI*.43)
+        : kind === 'eyes' ? this.eyeGeometry()
+        : kind === 'sphere' ? new THREE.SphereGeometry(1, 12, 10)
         : kind === 'cylinder' ? new THREE.CylinderGeometry(1, 1, 1, 10)
         : kind === 'ring' ? new THREE.TorusGeometry(1, .06, 5, 24)
         : new THREE.BoxGeometry(1, 1, 1);
       this.geometries.set(kind, geo);
     }
     return this.geometries.get(kind);
+  }
+
+  eyeGeometry(){
+    const positions=[],normals=[],uvs=[];
+    for(const side of [-1,1]){
+      const part=new THREE.SphereGeometry(1,6,4).toNonIndexed();part.scale(.012,.007,.005);part.translate(side*.046,0,0);
+      positions.push(...part.attributes.position.array);normals.push(...part.attributes.normal.array);uvs.push(...part.attributes.uv.array);part.dispose();
+    }
+    const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));return geometry;
   }
 
   piece(parent, kind, color, position, scale, emissive = false) {
@@ -112,20 +128,22 @@ export class LivingWorld {
       }
       this.piece(group,'box',0xcfd8de,[0,3.04,0],[.72,.33,3.3]);
       this.piece(group,'box',0x1b2d3b,[0,2.84,0],[.58,.055,2.62]);
-      this.piece(group,'box',0x7c8e99,[0,.008,0],[.7,.016,2.6]);
+      this.piece(group,'box',0x7c8e99,[0,.008,0],[.7,.016,2.6]).name='door-threshold';
       item.leaves=[];
       for(const side of [-1,1]) {
        const leaf=new THREE.Group();leaf.position.z=side*(.65+item.progress*1.34);group.add(leaf);
-       this.piece(leaf,'box',0xdce2e5,[0,1.4,0],[.22,2.8,1.3]);
+       this.piece(leaf,'box',0xdce2e5,[0,1.4,0],[.22,2.8,1.3]).name='door-leaf-core';
        for(const face of [-1,1]) {
         this.piece(leaf,'box',0xf0f0eb,[face*.12,1.64,0],[.035,2.16,1.16]);
         this.piece(leaf,'box',0x24599b,[face*.144,.51,0],[.018,.11,1.17]);
         this.piece(leaf,'box',0x788c9b,[face*.15,1.4,-side*.48],[.045,.54,.055]);
         for(let j=0;j<4;j++)this.piece(leaf,'box',0x354755,[face*.146,.22+j*.04,0],[.015,.014,.65]);
        }
-       this.piece(leaf,'box',0x152330,[0,1.4,-side*.64],[.25,2.8,.025]);item.leaves.push(leaf);
+       // The gasket ends exactly at the leaf edge. The old 25 mm gasket
+       // overlapped its counterpart at closure and shared the core's top face.
+       this.piece(leaf,'box',0x152330,[0,1.4,-side*.64],[.25,2.78,.02]).name='door-leaf-gasket';item.leaves.push(leaf);
       }
-      item.light=this.piece(group,'box',0x7fc7ff,[-.38,3.05,0],[.025,.055,.8],true);
+      item.light=this.piece(group,'box',0x7fc7ff,[-.38,3.17,0],[.025,.03,.8],true);
       if(this.ship.interior)for(const side of [-1,1])this.ship.interior.label(group,data.name,side*.38,3.05,0,2.45,.18,side*Math.PI/2);
     } else if (data.kind === 'crate') {
       this.piece(group, 'box', 0xd3dde2, [0, .38, 0], [.8, .72, .68]);
@@ -178,38 +196,42 @@ export class LivingWorld {
       let bx=x+side*(3.5+(n%3)*.45),bz=z-4+(Math.floor(n/2)%9);
       if(!walkable(bx,bz)){bx=x+side*3;bz=z+3.5;}
       return {id: i, baseX: bx, baseZ: bz, x: bx, z: bz, phase: i * 2.399,
-        yaw: 0, height: .86 + (i % 5) * .035, walking: true};
+        yaw: 0, height: .98 + (i % 5) * .025, walking: true};
     });
-    // Twelve articulated batches render up to 160 residents in twelve draw calls.
+    // Fifteen articulated batches keep the crowd cheap, including necks/hands.
     // Canvas fallback uses ordinary meshes with the same geometry and transforms.
     const definitions = [
-      ['torso', 'box', 0xe1e5e5, [0, 1.11, 0], [.45, .56, .28]],
-      ['vest', 'box', 0x32659c, [0, 1.18, -.151], [.33, .3, .035]],
-      ['head', 'sphere', 0xc6a18a, [0, 1.63, 0], [.17, .22, .17]],
-      ['hair', 'sphere', 0x45545a, [0, 1.77, .025], [.174, .095, .17]],
-      ['face', 'box', 0x2c3e47, [0, 1.66, -.16], [.2, .027, .024]],
-      ['pelvis', 'box', 0x354b59, [0, .78, 0], [.38, .17, .28]],
-      ['armL', 'cylinder', 0xe1e5e5, [-.3, 1.02, 0], [.075, .58, .075]],
-      ['armR', 'cylinder', 0xe1e5e5, [.3, 1.02, 0], [.075, .58, .075]],
-      ['legL', 'cylinder', 0x354b59, [-.12, .43, 0], [.095, .6, .095]],
-      ['legR', 'cylinder', 0x354b59, [.12, .43, 0], [.095, .6, .095]],
-      ['bootL', 'box', 0x1f303b, [-.12, .1, -.06], [.19, .17, .3]],
-      ['bootR', 'box', 0x1f303b, [.12, .1, -.06], [.19, .17, .3]]
+      ['torso', 'torso', 0xffffff, [0, 1.12, 0], [.47, .59, .30]],
+      ['vest', 'box', 0x243844, [0, 1.31, -.125], [.33, .07, .025]],
+      ['head', 'sphere', 0xffffff, [0, 1.63, 0], [.125, .16, .12]],
+      ['hair', 'hair', 0xffffff, [0, 1.64, -.002], [.132, .163, .129]],
+      ['face', 'eyes', 0x293335, [0, 1.65, -.113], [1, 1, 1]],
+      ['neck', 'cylinder', 0xffffff, [0, 1.47, 0], [.055, .13, .055]],
+      ['pelvis', 'limb', 0x283d4c, [0, .80, 0], [.36, .23, .27]],
+      ['armL', 'limb', 0xffffff, [-.275, 1.09, -.015], [.13, .56, .14]],
+      ['armR', 'limb', 0xffffff, [.275, 1.09, -.015], [.13, .56, .14]],
+      ['handL', 'sphere', 0xffffff, [-.275, .75, -.02], [.043, .065, .032]],
+      ['handR', 'sphere', 0xffffff, [.275, .75, -.02], [.043, .065, .032]],
+      ['legL', 'limb', 0x344c5a, [-.105, .46, 0], [.16, .65, .18]],
+      ['legR', 'limb', 0x344c5a, [.105, .46, 0], [.16, .65, .18]],
+      ['bootL', 'box', 0x1b2933, [-.105, .095, -.035], [.17, .18, .26]],
+      ['bootR', 'box', 0x1b2933, [.105, .095, -.035], [.17, .18, .26]]
     ];
     for (const [name, kind, color, position, scale] of definitions) {
       const material = this.material(color), geometry = this.geometry(kind);
+      const palette=name==='head'||name==='neck'||name.startsWith('hand')?skinTones:name==='hair'?hairColors:name==='torso'||name.startsWith('arm')?uniforms:null;
       if (!this.ship.renderer.isSoftware && count) {
         const mesh = new THREE.InstancedMesh(geometry, material, count);
         mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         mesh.frustumCulled = false;
-        if (name === 'torso' || name.startsWith('arm')) {
-          for (let i = 0; i < count; i++) mesh.setColorAt(i, new THREE.Color([0xe5e7e4, 0xd7dfe5, 0xe5e2d9, 0xdce5df][i % 4]));
+        if (palette) {
+          for (let i = 0; i < count; i++) mesh.setColorAt(i, new THREE.Color(palette[i % 4]));
         }
         this.crowd.add(mesh);
-        this.parts.push({name, position, scale, mesh});
+        this.parts.push({name, position, scale, mesh,palette});
       } else {
-        const meshes = this.npcs.map(() => {
-          const mesh = new THREE.Mesh(geometry, material);
+        const meshes = this.npcs.map(npc => {
+          const mesh = new THREE.Mesh(geometry, palette?this.material(palette[npc.id%4]):material);
           mesh.matrixAutoUpdate = false;
           this.crowd.add(mesh);
           return mesh;
@@ -294,6 +316,8 @@ export class LivingWorld {
     }
     const listening = performance.now() < this.speechUntil;
     const users = [player, ...[...this.ship.remote.values()].map(remote => remote.mesh.position)];
+    const visibleRooms=this.ship.interior?.visibleRooms;
+    let visibleCount=0;
     for (const npc of this.npcs) {
       const nearby = users.find(position => Math.hypot(position.x - npc.x, position.z - npc.z) < 2);
       const near = Boolean(nearby);
@@ -302,26 +326,38 @@ export class LivingWorld {
       if (npc.walking && !reducedMotion) {
         const a = t * .27 + npc.phase;
         const nx = npc.baseX + Math.cos(a) * .55, nz = npc.baseZ + Math.sin(a) * .65;
-        npc.yaw = Math.atan2(npc.x - nx, npc.z - nz);
+        const targetYaw=Math.atan2(npc.x-nx,npc.z-nz);
+        npc.yaw+=Math.atan2(Math.sin(targetYaw-npc.yaw),Math.cos(targetYaw-npc.yaw))*Math.min(1,dt*4);
         if(walkable(nx,nz)&&this.walkable(nx,nz)){npc.x+=(nx-npc.x)*Math.min(1,dt*2);npc.z+=(nz-npc.z)*Math.min(1,dt*2);}
       } else if (near || hears) {
         const target = hears ? this.speechPosition : nearby;
-        npc.yaw = Math.atan2(npc.x - target.x, npc.z - target.z);
+        const targetYaw=Math.atan2(npc.x-target.x,npc.z-target.z);
+        npc.yaw+=Math.atan2(Math.sin(targetYaw-npc.yaw),Math.cos(targetYaw-npc.yaw))*Math.min(1,dt*4);
       }
+      // Keep movement deterministic, but do no rig work for residents behind
+      // closed bulkheads. Compact GPU instances instead of drawing zero scales.
+      const visible=!visibleRooms||visibleRooms.has(roomAt(npc.x,npc.z)?.id);
+      if(!visible){for(const part of this.parts)if(part.meshes)part.meshes[npc.id].visible=false;continue;}
+      const instanceIndex=visibleCount++;
       this.rotation.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, npc.yaw);
       this.matrix.compose(this.npcPosition.set(npc.x, 0, npc.z), this.rotation, unit);
-      const step = !reducedMotion && npc.walking ? Math.sin(t * 5 + npc.phase) * .3 : 0;
+      const step = !reducedMotion && npc.walking ? Math.sin(t * 3 + npc.phase) * .18 : 0;
       for (const part of this.parts) {
         const side = part.name.endsWith('L') ? -1 : 1;
-        const arm = part.name.startsWith('arm'), leg = part.name.startsWith('leg'), boot = part.name.startsWith('boot');
+        const arm = part.name.startsWith('arm')||part.name.startsWith('hand'), leg = part.name.startsWith('leg'), boot = part.name.startsWith('boot');
         this.partPosition.set(...part.position).multiplyScalar(npc.height);
         if (arm || leg || boot) this.partPosition.z += side * step * (arm ? -.3 : boot ? .5 : .23);
         this.scale.set(...part.scale).multiplyScalar(npc.height);
-        if(this.ship.interior?.visibleRooms&&!this.ship.interior.visibleRooms.has(roomAt(npc.x,npc.z)?.id))this.scale.set(0,0,0);
         this.euler.set((arm ? -1 : leg ? 1 : 0) * side * step, 0, 0);
         this.rotation.setFromEuler(this.euler);
         this.localMatrix.compose(this.partPosition, this.rotation, this.scale).premultiply(this.matrix);
-        if (part.mesh) part.mesh.setMatrixAt(npc.id, this.localMatrix);
+        if (part.mesh) {
+          part.mesh.setMatrixAt(instanceIndex, this.localMatrix);
+          if(part.mesh.instanceColor){
+            this.npcColor||=new THREE.Color();
+            part.mesh.setColorAt(instanceIndex,this.npcColor.set(part.palette[npc.id%4]));
+          }
+        }
         else {
           part.meshes[npc.id].matrix.copy(this.localMatrix);
           // Software renderer has no instancing; hide distant details only.
@@ -329,7 +365,11 @@ export class LivingWorld {
         }
       }
     }
-    for (const part of this.parts) if (part.mesh) part.mesh.instanceMatrix.needsUpdate = true;
+    for (const part of this.parts) if (part.mesh) {
+      part.mesh.count=visibleCount;
+      part.mesh.instanceMatrix.needsUpdate=true;
+      if(part.mesh.instanceColor)part.mesh.instanceColor.needsUpdate=true;
+    }
   }
 
   clear() {

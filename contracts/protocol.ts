@@ -45,16 +45,23 @@ export interface Citation {
 export interface AgentTalkRequest {
   agent_id: string;
   text: string;
+  dialogue_mode?: 'articles' | 'casual';
 }
 
 export interface AgentReply {
+  dialogue_mode?: 'articles' | 'casual';
+  retrieval?: {mode:'hybrid' | 'bm25' | 'bm25_fallback';embedding_model?:string;degraded_reason?:string};
+  status?: string;
+  grounding?: string;
+  model?: string;
+  fallback_reason?: string;
  tool_transport?: string;
   agent_id: string;
   agent_name: string;
   text: string;
   citation?: Citation;
   citations?: Citation[];
-  mode?: 'model' | 'knowledge_base' | 'rules';
+  mode?: 'model' | 'knowledge_base' | 'rules' | 'no_sources' | 'unavailable';
   evidence?: RAGChunk[];
   analysis?: Record<string, unknown>;
 }
@@ -124,7 +131,7 @@ export interface ClientPayloads {
   'room.reset': Record<string,never>;
   'chat.send': {text:string};
   'decision.vote': {approve:boolean;expected_version:number};
-  'dialogue.history': {agent_id:string};
+  'dialogue.history': {agent_id:string;dialogue_mode?:'articles'|'casual'};
   'player.teleport': {target:string};
   'experiment.start': Record<string,never>;
   'experiment.preview': {speed:number};
@@ -134,7 +141,7 @@ export interface ClientPayloads {
 export interface ServerPayloads {
   'room.state': RoomState;
   'player.position': PlayerState;
-  'dialogue.history': {messages:Array<{role:string;text:string;reply?:AgentReply}>};
+  'dialogue.history': {dialogue_mode?:'articles'|'casual';messages:Array<{role:string;text:string;dialogue_mode?:'articles'|'casual';reply?:AgentReply}>};
   'chat.sent': {name:string;text:string;at:number};
   'decision.pending': {pending:true};
   'experiment.started': ExperimentState;

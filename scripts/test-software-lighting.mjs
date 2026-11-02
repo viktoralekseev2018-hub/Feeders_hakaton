@@ -25,3 +25,34 @@ const rear=new THREE.Mesh(new THREE.PlaneGeometry(20,20),new THREE.MeshBasicMate
 const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute([-2,-2,-2,2,-2,-2,0,2,.1],3));geometry.computeVertexNormals();scene.add(new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({color:0xff0000,side:THREE.DoubleSide})));
 const clipped=sample();assert.ok(clipped[0]>200&&clipped[2]<20,'near-clipped foreground must occlude rear geometry');
 console.log('Canvas near-plane clipping and depth occlusion — passed');
+
+// Surface tiles have negative/extruded UVs; screens use a flipped data texture.
+// Check actual pixels against a four-colour tile, including its repeat seam.
+scene.clear();
+const tile=new THREE.DataTexture(new Uint8Array([
+ 255,0,0,255, 0,255,0,255,
+ 0,0,255,255, 255,255,0,255
+]),2,2);
+const boardGeometry=new THREE.PlaneGeometry(2,2),board=new THREE.Mesh(boardGeometry,new THREE.MeshBasicMaterial({color:0xffffff,map:tile}));board.position.z=-2;scene.add(board);
+const tileSample=(u,v)=>{const uv=boardGeometry.attributes.uv;for(let i=0;i<uv.count;i++)uv.setXY(i,u,v);return sample();};
+tile.wrapS=tile.wrapT=THREE.RepeatWrapping;
+assert.deepEqual(tileSample(.25,.25),[255,0,0],'data texture keeps authored row orientation');
+assert.deepEqual(tileSample(-.25,.25),[0,255,0],'negative extruded UV repeats instead of stretching the border');
+assert.deepEqual(tileSample(1.25,.25),[255,0,0],'positive UV beyond one repeats');
+tile.wrapS=THREE.ClampToEdgeWrapping;assert.deepEqual(tileSample(-.25,.25),[255,0,0],'screen edge stays clamped');
+tile.wrapS=THREE.MirroredRepeatWrapping;assert.deepEqual(tileSample(-.25,.25),[255,0,0]);assert.deepEqual(tileSample(1.25,.25),[0,255,0]);
+tile.wrapS=THREE.RepeatWrapping;tile.repeat.set(2,2);tile.offset.set(.55,.55);assert.deepEqual(tileSample(.1,.1),[255,255,0],'texture repeat and offset applied before wrapping');
+tile.repeat.set(1,-1);tile.offset.set(0,1);assert.deepEqual(tileSample(.25,.25),[0,0,255],'serialized screen flip remains correct');
+tile.flipY=true;assert.deepEqual(tileSample(.25,.25),[255,0,0],'explicit flipY applied once');
+tile.flipY=false;tile.repeat.set(1,1);tile.offset.set(0,0);tile.magFilter=THREE.LinearFilter;
+const seam=tileSample(0,.25);assert.ok(seam[0]>=127&&seam[0]<=128&&seam[1]>=127&&seam[1]<=128&&seam[2]===0,'linear repeat blends the two sides of the tile seam');
+tile.wrapS=THREE.ClampToEdgeWrapping;assert.deepEqual(tileSample(0,.25),[255,0,0],'linear screen sampler cannot wrap into the opposite edge');
+console.log('Canvas UV transforms, negative/repeated/mirrored UVs, screen orientation and bilinear tile seams — passed');
+
+// A discarded texel must not paint or write depth over the opaque rear plane.
+scene.clear();scene.add(rear,board);board.material.alphaTest=.5;
+board.material.map=new THREE.DataTexture(new Uint8Array([255,0,0,64]),1,1);
+assert.deepEqual(sample(),[0,0,255],'alpha-tested texture exposes the rear surface');
+board.material.alphaTest=0;board.material.map=new THREE.DataTexture(new Uint8Array([255,0,0,0]),1,1);
+assert.deepEqual(sample(),[0,0,255],'fully transparent texel preserves the rear surface');
+console.log('Canvas alpha-tested and transparent texture cutouts — passed');

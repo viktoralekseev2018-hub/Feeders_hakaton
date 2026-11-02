@@ -24,7 +24,7 @@ func NewCrewService(local *npc.Local, mentor *Mentor) *CrewService {
 }
 func (s *CrewService) Observe(player, action string) { s.mentor.Observe(player, action) }
 func (s *CrewService) Talk(ctx context.Context, r Request) (Reply, error) {
-	if r.AgentID == "savinykh" {
+	if r.AgentID == "savinykh" && r.DialogueMode == "" {
 		memoryID := r.PlayerID
 		if r.Scope != "" {
 			memoryID = r.Scope + "/" + r.PlayerID
@@ -52,11 +52,11 @@ func (s *CrewService) Talk(ctx context.Context, r Request) (Reply, error) {
 			return answer, err
 		}
 	}
-	reply, err := s.local.Talk(ctx, npc.Request{PlayerID: r.PlayerID, AgentID: r.AgentID, Text: r.Text, Scope: r.Scope})
+	reply, err := s.local.Talk(ctx, npc.Request{PlayerID: r.PlayerID, AgentID: r.AgentID, Text: r.Text, Scope: r.Scope, DialogueMode: r.DialogueMode})
 	if err != nil {
 		return Reply{}, err
 	}
-	if r.AgentID == "savinykh" {
+	if r.AgentID == "savinykh" && r.DialogueMode == "" {
 		s.mu.Lock()
 		memoryID := r.PlayerID
 		if r.Scope != "" {
@@ -66,7 +66,7 @@ func (s *CrewService) Talk(ctx context.Context, r Request) (Reply, error) {
 		s.mu.Unlock()
 	}
 	p, _ := crew.Find(r.AgentID)
-	answer := Reply{Model: reply.Model, FallbackReason: reply.FallbackReason, ToolTransport: reply.ToolTransport, AgentID: reply.AgentID, AgentName: p.Name, Text: reply.Text, Evidence: reply.Evidence, Analysis: reply.Analysis, Mode: reply.Mode}
+	answer := Reply{DialogueMode: reply.DialogueMode, Retrieval: reply.Retrieval, Status: reply.Status, Grounding: reply.Grounding, Model: reply.Model, FallbackReason: reply.FallbackReason, ToolTransport: reply.ToolTransport, AgentID: reply.AgentID, AgentName: p.Name, Text: reply.Text, Evidence: reply.Evidence, Analysis: reply.Analysis, Mode: reply.Mode}
 	seenSources := map[string]bool{}
 	for _, e := range reply.Evidence {
 		if reply.Mode == "model" && !strings.Contains(reply.Text, "["+e.ID+"]") {

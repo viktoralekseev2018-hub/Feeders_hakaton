@@ -5,45 +5,45 @@
   "frames": [
     {
       "name": "bridge",
-      "render_ms": 197,
-      "triangles": 8650,
-      "calls": 496
+      "render_ms": 296.8,
+      "triangles": 20113,
+      "calls": 1034
     },
     {
       "name": "corridor",
-      "render_ms": 114,
-      "triangles": 3346,
-      "calls": 574
+      "render_ms": 129.9,
+      "triangles": 13123,
+      "calls": 1599
     },
     {
       "name": "research",
-      "render_ms": 61.8,
-      "triangles": 1369,
-      "calls": 190
+      "render_ms": 81,
+      "triangles": 8193,
+      "calls": 528
     },
     {
       "name": "door-closed",
-      "render_ms": 50.3,
-      "triangles": 431,
-      "calls": 103
+      "render_ms": 62.8,
+      "triangles": 830,
+      "calls": 186
     },
     {
       "name": "door-open",
-      "render_ms": 83.7,
-      "triangles": 1449,
-      "calls": 290
+      "render_ms": 97.8,
+      "triangles": 5917,
+      "calls": 675
     },
     {
       "name": "cargo",
-      "render_ms": 108.3,
-      "triangles": 1862,
-      "calls": 223
+      "render_ms": 105.8,
+      "triangles": 9706,
+      "calls": 580
     },
     {
       "name": "habitat",
-      "render_ms": 62.7,
-      "triangles": 870,
-      "calls": 156
+      "render_ms": 98,
+      "triangles": 8694,
+      "calls": 536
     }
   ]
 }

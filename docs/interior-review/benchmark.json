@@ -11,26 +11,26 @@
     {
       "name": "bridge",
       "samples": 10,
-      "median_ms": 100.3,
-      "p95_ms": 113.6,
-      "triangles": 8650,
-      "calls": 507
+      "median_ms": 142.3,
+      "p95_ms": 151.2,
+      "triangles": 20113,
+      "calls": 1047
     },
     {
       "name": "corridor",
       "samples": 10,
-      "median_ms": 132.3,
-      "p95_ms": 137.9,
-      "triangles": 6692,
-      "calls": 916
+      "median_ms": 169,
+      "p95_ms": 264.9,
+      "triangles": 26593,
+      "calls": 2474
     },
     {
       "name": "research",
       "samples": 10,
-      "median_ms": 57.9,
-      "p95_ms": 63.7,
-      "triangles": 1369,
-      "calls": 190
+      "median_ms": 79.7,
+      "p95_ms": 81.9,
+      "triangles": 8193,
+      "calls": 528
     }
   ]
 }

@@ -32,7 +32,7 @@ func TestCrewCitationPointsToActuallyCitedDocument(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reply, err := NewCrewService(local, nil).Talk(context.Background(), Request{"", "p", "dzhanibekov", "Питание"})
+	reply, err := NewCrewService(local, nil).Talk(context.Background(), Request{Scope: "", PlayerID: "p", AgentID: "dzhanibekov", Text: "Питание"})
 	if err != nil || reply.Mode != "model" || len(reply.Citations) != 1 || reply.Citation == nil {
 		t.Fatal(reply, err)
 	}

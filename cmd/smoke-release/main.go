@@ -65,7 +65,7 @@ func main() {
 	}
 	defer stop()
 	start(false)
-	for _, asset := range []string{"index.html", "src/main.js", "css/style.css", "css/universe.css", "src/scene.js", "src/net/NetworkManager.js", "src/ui/UniversePanel.js", "src/world/LivingWorld.js", "src/crew/BridgeCrew.js"} {
+	for _, asset := range []string{"index.html", "src/main.js", "css/style.css", "css/universe.css", "src/scene.js", "src/net/NetworkManager.js", "src/ui/UniversePanel.js", "src/ui/FlightDeck.js", "src/world/LivingWorld.js", "src/crew/BridgeCrew.js", "src/crew/CrewLabels.js", "src/interior/ShipInterior.js", "src/interior/ReferenceArchitecture.js", "src/interior/ReferenceEquipment.js", "src/interior/SurfaceMaterials.js", "src/render/FrameBudget.js", "src/render/TextureQuality.js", "src/render/SoftwareRenderer.js", "src/world/StreamingWorld.js"} {
 		response, err := http.Get(base + "/" + asset)
 		check(err)
 		actual, err := io.ReadAll(response.Body)
@@ -142,6 +142,7 @@ func main() {
 		return world
 	}
 	u := readUniverse(a, "universe-initial")
+	initialObjects := len(u["objects"].([]any))
 	call(a, "universe.admin", "universe-settings", map[string]any{"expected_version": u["version"], "settings": map[string]any{"npc_count": 96, "ambient_color": "#ff8855"}})
 	u = readUniverse(b, "universe-peer")
 	if u["settings"].(map[string]any)["npc_count"] != float64(96) {
@@ -155,7 +156,7 @@ func main() {
 	call(a, "universe.interact", "crate-drop", map[string]any{"expected_version": u["version"], "object_id": "crate-cryo", "action": "drop"})
 	call(b, "agent.talk", "plant-world", map[string]string{"agent_id": "ryazansky", "text": "Создай сад"})
 	u = readUniverse(a, "generated-world")
-	if len(u["objects"].([]any)) != 9 {
+	if len(u["objects"].([]any)) != initialObjects+4 {
 		panic("agent did not create shared environment")
 	}
 	call(b, "telemetry.report", "client-metrics", map[string]any{"fps": 60, "ping_ms": 12, "frame_ms": 16.7, "draw_calls": 128, "triangles": 25000, "renderer": "webgl", "hidden": false})
@@ -229,6 +230,7 @@ func main() {
 	check(e)
 	var plan struct {
 		World     int `json:"world_bytes"`
+		Budget    int `json:"budget"`
 		Resources []struct {
 			Size int `json:"size"`
 		} `json:"resources"`
@@ -239,8 +241,34 @@ func main() {
 	for _, item := range plan.Resources {
 		cached += item.Size
 	}
-	if plan.World == 0 || float64(cached)/float64(plan.World) > .1 {
+	if plan.World == 0 || plan.Budget <= 0 || cached > plan.Budget {
 		panic("cache exceeds budget")
+	}
+	for _, view := range []string{"bridge", "reactor", "bio", "habitat"} {
+		response, err := clients[0].Get(base + "/api/world/interest?view=" + view)
+		check(err)
+		var focused struct {
+			Resources []struct {
+				ID   string `json:"id"`
+				Kind string `json:"kind"`
+			} `json:"resources"`
+		}
+		check(json.NewDecoder(response.Body).Decode(&focused))
+		response.Body.Close()
+		if response.StatusCode != 200 || len(focused.Resources) == 0 {
+			panic("overview plan unavailable")
+		}
+		for _, resource := range focused.Resources {
+			if resource.Kind != "object" {
+				continue
+			}
+			asset, err := clients[0].Get(base + "/api/world/resource/" + resource.ID + "?view=" + view)
+			check(err)
+			asset.Body.Close()
+			if asset.StatusCode != 200 {
+				panic("overview resource authorization differs from plan")
+			}
+		}
 	}
 	r, e = clients[0].Get(base + "/__qa/enter")
 	check(e)
@@ -272,7 +300,7 @@ func main() {
 		panic("game progress lost")
 	}
 	u = readUniverse(a, "restored-universe")
-	if u["settings"].(map[string]any)["npc_count"] != float64(96) || len(u["objects"].([]any)) != 9 {
+	if u["settings"].(map[string]any)["npc_count"] != float64(96) || len(u["objects"].([]any)) != initialObjects+4 {
 		panic("universe lost after restart")
 	}
 	reply = call(a, "agent.talk", "fallback", map[string]string{"agent_id": "dzhanibekov", "text": "Объясни проще"})

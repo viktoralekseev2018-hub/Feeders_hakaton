@@ -7,15 +7,41 @@ export class AuthScreen {
     this.onSuccess = onSuccess;
     this.register = location.pathname === '/register';
     this.busy = false;
-    // Adapt the terminal rail from the supplied FIZMA form to the ship's real
-    // username-based authentication. No demo mode and no extra email account.
-    const note = document.querySelector?.('.access-note');
-    if (note) {
-      const terminal = document.createElement('div');
-      terminal.className = 'fizma-terminal';
-      terminal.innerHTML = '<div class="fizma-terminal-heading">FIZMA / CREW ACCESS</div><p><i>&gt;</i>access: <strong>crew</strong></p><p><i>&gt;</i>progress: <strong>saved on host</strong></p><p><i>&gt;</i>world: <strong>shared</strong></p><p><i>&gt;</i>status: <strong id="fizma-auth-status">waiting for login</strong></p>';
-      note.replaceWith(terminal);
+    // Preserve FIZMA.zip's split form and terminal; authentication still uses
+    // Last Crew's callsign/session API, with the invitation query untouched.
+    const entry = $('auth-screen');
+    const setTheme = mode => {
+      if (!entry?.dataset) return;
+      entry.dataset.theme = mode;
+      const toggle = $('fizma-theme-toggle');
+      toggle?.setAttribute('aria-label', mode === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему');
+      if (toggle) toggle.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' + (mode === 'dark' ? '<path d="M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z"/>' : '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/>') + '</svg>';
+    };
+    try { setTheme(localStorage.getItem('lastcrew-entry-mode') === 'light' ? 'light' : 'dark'); } catch { setTheme('dark'); }
+    if ($('fizma-theme-toggle')) $('fizma-theme-toggle').onclick = () => {
+      const mode = entry.dataset.theme === 'dark' ? 'light' : 'dark';
+      setTheme(mode);
+      try { localStorage.setItem('lastcrew-entry-mode', mode); } catch { /* Use this tab's preference. */ }
+    };
+    const setMenu = open => {
+      const menu = $('fizma-mobile-menu'), toggle = $('fizma-menu-toggle');
+      if (menu) menu.hidden = !open;
+      toggle?.setAttribute('aria-expanded', String(open));
+      toggle?.setAttribute('aria-label', open ? 'Закрыть меню' : 'Открыть меню');
+      if (toggle) toggle.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + (open ? 'M6 6l12 12M6 18 18 6' : 'M4 6h16M4 12h16M4 18h16') + '"/></svg>';
+    };
+    const closeMenu = () => setMenu(false);
+    if ($('fizma-menu-toggle')) $('fizma-menu-toggle').onclick = () => setMenu($('fizma-mobile-menu').hidden);
+    for (const link of document.querySelectorAll?.('#fizma-mobile-menu a') || []) link.onclick = closeMenu;
+    for (const button of document.querySelectorAll?.('[data-entry-trigger]') || []) button.onclick = () => {
+      closeMenu(); $(button.dataset.entryTrigger)?.click();
+    };
+    const header = document.querySelector?.('.fizma-header');
+    if (header) {
+      const scroll = () => header.classList.toggle('scrolled', window.scrollY > 18);
+      window.addEventListener('scroll', scroll, {passive:true}); scroll();
     }
+    if ($('fizma-session-mode')) $('fizma-session-mode').textContent = location.protocol === 'https:' ? 'secure' : 'local';
     $('auth-switch').onclick = () => this.setMode(!this.register);
     $('auth-login-tab').onclick = () => this.setMode(false);
     $('auth-register-tab').onclick = () => this.setMode(true);
@@ -57,16 +83,17 @@ export class AuthScreen {
 
   render() {
     const r = this.register;
-    $('auth-title').textContent = r ? 'Ваше место в экипаже' : 'Вернуться на борт';
-    $('auth-code').textContent = r ? '02 / CREATE ACCOUNT' : '01 / AUTHORIZATION';
+    $('auth-title').textContent = r ? 'Регистрация в Last Crew' : 'Вход в Last Crew';
+    $('auth-code').textContent = r ? 'CREATE ACCOUNT' : 'AUTHORIZATION';
+    if ($('auth-code-mobile')) $('auth-code-mobile').textContent = $('auth-code').textContent;
     const terminalStatus = $('fizma-auth-status');
     if (terminalStatus) terminalStatus.textContent = r ? 'waiting for registration' : 'waiting for login';
-    $('auth-subtitle').textContent = r ? 'Придумайте позывной. Впереди — ваша первая экспедиция и решения, которые изменят её исход.' : 'Ваша экспедиция ждёт. Войдите, чтобы продолжить с места остановки.';
-    $('auth-submit').innerHTML = `<span>${r ? 'ПРИСОЕДИНИТЬСЯ К ЭКИПАЖУ' : 'ВОЙТИ НА КОРАБЛЬ'}</span><span aria-hidden="true">↗</span>`;
-    $('auth-switch-caption').textContent = r ? 'Уже есть аккаунт?' : 'Первая экспедиция?';
-    $('auth-switch').textContent = r ? 'Войти на корабль ↗' : 'Создать аккаунт ↗';
+    $('auth-subtitle').textContent = r ? 'Создай аккаунт, чтобы исследовать корабль, сохранять результаты и играть вместе с экипажем.' : 'Вернись на корабль и продолжи сохранённую экспедицию.';
+    $('auth-submit').innerHTML = `<span>${r ? 'СОЗДАТЬ АККАУНТ' : 'ВОЙТИ'}</span><span class="fizma-submit-arrow" aria-hidden="true">→</span>`;
+    $('auth-switch-caption').textContent = r ? 'Уже есть аккаунт?' : 'Нет аккаунта?';
+    $('auth-switch').textContent = r ? 'Войти' : 'Зарегистрироваться';
     $('password').autocomplete = r ? 'new-password' : 'current-password';
-    $('password').placeholder = r ? 'Не менее 6 символов' : 'Ваш пароль';
+    $('password').placeholder = 'Не менее 6 символов';
     $('password-label-hint').textContent = r ? 'НЕ МЕНЕЕ 6 СИМВОЛОВ' : 'ДОСТУП К КОРАБЛЮ';
     $('auth-login-tab').setAttribute('aria-pressed', String(!r));
     $('auth-register-tab').setAttribute('aria-pressed', String(r));
@@ -113,7 +140,7 @@ export class AuthScreen {
     $('auth-form').setAttribute('aria-busy', 'true');
     const buttons = ['auth-submit', 'auth-switch', 'auth-login-tab', 'auth-register-tab'];
     buttons.forEach(id => $(id).disabled = true);
-    $('auth-submit').innerHTML = `<span>${this.register ? 'СОЗДАЁМ АККАУНТ…' : 'ПРОВЕРЯЕМ ДОСТУП…'}</span><span class="button-spinner" aria-hidden="true"></span>`;
+    $('auth-submit').innerHTML = `<span>${this.register ? 'СОЗДАНИЕ...' : 'ВХОД...'}</span><span class="fizma-submit-arrow" aria-hidden="true">→</span>`;
     try {
       const user = await this.network.authenticate(this.register ? 'register' : 'login', name, password);
       $('password').value = '';
@@ -130,7 +157,7 @@ export class AuthScreen {
       this.busy = false;
       $('auth-form').removeAttribute('aria-busy');
       buttons.forEach(id => $(id).disabled = false);
-      $('auth-submit').innerHTML = `<span>${this.register ? 'ПРИСОЕДИНИТЬСЯ К ЭКИПАЖУ' : 'ВОЙТИ НА КОРАБЛЬ'}</span><span aria-hidden="true">↗</span>`;
+      $('auth-submit').innerHTML = `<span>${this.register ? 'СОЗДАТЬ АККАУНТ' : 'ВОЙТИ'}</span><span class="fizma-submit-arrow" aria-hidden="true">→</span>`;
     }
   }
 }

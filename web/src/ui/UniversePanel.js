@@ -1,9 +1,37 @@
+import {layout,contains,walkable} from '../interior/DeckLayout.js';
+
 const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const agentNames = {savinykh:'Виктор Савиных',dzhanibekov:'Владимир Джанибеков',ryazansky:'Сергей Рязанский',krikalev:'Сергей Крикалёв'};
 const behaviors = {helpful:['Помощник','Выполняет просьбы и меняет окружение.'],patrol:['Патруль','Обходит пост и реагирует на обращения.'],guard:['Охрана','Следит за постом; создание предметов ограничено.'],passive:['Наблюдатель','Остаётся на месте и не изменяет мир.']};
 const kinds = {door:'Дверь',crate:'Контейнер',plant:'Растение',beacon:'Маяк'};
 const finite = value => Number.isFinite(value) ? value : null;
 const metric = (value,suffix='') => finite(value) === null ? '—' : Math.round(value).toLocaleString('ru-RU') + suffix;
+const compartments=layout.areas.filter(area=>area.kind==='room');
+const fixedDoors=new Set(layout.gates.filter(gate=>gate.door).map(gate=>gate.id));
+const objectRadius=kind=>kind==='door'?1.6:kind==='plant'?1:.8;
+
+export function findSpawnPoint(roomID,objects=[],kind='crate') {
+  const room=compartments.find(area=>area.id===roomID);
+  if(!room)return null;
+  const radius=objectRadius(kind),candidates=[];
+  for(let dx=-Math.floor(room.w/2);dx<=room.w/2;dx++)for(let dz=-Math.floor(room.d/2);dz<=room.d/2;dz++) {
+    const x=room.x+dx,z=room.z+dz;
+    if(!contains(room,x,z,radius+.2)||!walkable(x,z,radius))continue;
+    if(layout.gates.some(gate=>Math.hypot(x-gate.x,z-gate.z)<radius+1.2))continue;
+    if(objects.some(object=>!object.held_by&&Math.hypot(x-object.x,z-object.z)<radius+objectRadius(object.kind)+.3))continue;
+    candidates.push({x,y:0,z,distance:dx*dx+dz*dz});
+  }
+  candidates.sort((a,b)=>a.distance-b.distance||a.x-b.x||a.z-b.z);
+  if(!candidates.length)return null;
+  const {x,y,z}=candidates[0];return {x,y,z};
+}
+
+export function describeDoor(door,now=Date.now()) {
+  if(door.locked)return {status:'Заблокирована: '+door.locked,disabled:true,remaining:0};
+  const remaining=door.motion_at?Math.max(0,door.motion_at+layout.doorDuration-now):0;
+  if(remaining)return {status:door.open?'Открывается…':'Закрывается…',disabled:true,remaining};
+  return {status:door.open?'Открыта':'Закрыта',disabled:false,remaining:0};
+}
 
 /** Room-scoped world controls. Identity, permissions and mutations are checked by the server. */
 export class UniversePanel {
@@ -14,7 +42,7 @@ export class UniversePanel {
     this.dialog.className='universe-dialog';this.dialog.id='universe-dialog';
     this.dialog.setAttribute('aria-labelledby','universe-title');
     document.body.append(this.dialog);
-    this.dialog.addEventListener('close',()=>{clearInterval(this.pollTimer);this.pollTimer=null;});
+    this.dialog.addEventListener('close',()=>{clearInterval(this.pollTimer);this.pollTimer=null;clearTimeout(this.doorTimer);});
     this.dialog.addEventListener('click',event=>{if(event.target===this.dialog){const b=this.dialog.getBoundingClientRect();if(event.clientX<b.left||event.clientX>b.right||event.clientY<b.top||event.clientY>b.bottom)this.dialog.close();}});
     this.button=document.createElement('button');this.button.id='universe-button';this.button.className='secondary small universe-launch';this.button.type='button';this.button.hidden=true;this.button.onclick=()=>this.open();
     document.querySelector('.header-actions')?.prepend(this.button);
@@ -59,6 +87,7 @@ export class UniversePanel {
   }
   close(){this.dialog.close();}
   render(){
+    clearTimeout(this.doorTimer);
     const admin=this.isAdmin;
     this.renderedAdmin=admin;
     this.dialog.innerHTML=`<div class="universe-top"><div><span class="eyebrow">HORIZON–7 / ${admin?'WORLD CONTROL':'LIVING WORLD'}</span><h2 id="universe-title">${admin?'Панель администратора':'Живой мир'}</h2><p>${admin?'Настройте вселенную вашей экспедиции. Изменения видны всему экипажу.':'Перемещайте предметы и поручайте наставникам менять окружение.'}</p></div><button type="button" class="icon-button universe-close" aria-label="Закрыть панель">×</button></div><div class="universe-summary" id="universe-summary"></div><nav class="universe-tabs" aria-label="Разделы управления">${[['objects','◇','Предметы'],...(admin?[['settings','☀','Вселенная'],['agents','♧','Агенты'],['metrics','⌁','Клиенты']]:[])].map(([id,icon,label])=>`<button type="button" data-universe-tab="${id}" aria-pressed="${this.tab===id}"><span aria-hidden="true">${icon}</span> ${label}</button>`).join('')}</nav><div class="universe-body" id="universe-body"></div><p class="universe-feedback" id="universe-feedback" role="status" aria-live="polite"></p><div class="universe-footer"><span><i class="dot"></i> ${admin?'Права владельца экспедиции':'Общее окружение экспедиции'}</span><span id="universe-version"></span></div>`;
@@ -77,6 +106,7 @@ export class UniversePanel {
   }
   renderObjects(full=false){
     if(this.tab!=='objects'||!this.body||!this.state)return;
+    clearTimeout(this.doorTimer);const now=Date.now();let nextDoorUpdate=Infinity;
     if(full||!this.body.querySelector('#universe-object-list')){
       this.body.innerHTML=`<section class="universe-command"><div class="universe-section-heading"><h3>Попросите изменить мир</h3><span class="universe-chip">Команды без LLM</span></div><p>Агент создаёт окружение для всей команды. Его поведение задаёт администратор.</p><form id="universe-command-form"><label class="sr-only" for="universe-command-agent">Наставник</label><select id="universe-command-agent">${Object.entries(agentNames).map(([id,name])=>`<option value="${id}">${name}</option>`).join('')}</select><label class="sr-only" for="universe-command-text">Просьба к агенту</label><input id="universe-command-text" maxlength="300" placeholder="Например: добавь растения" required><button class="primary" type="submit">Выполнить ↗</button></form><div class="universe-examples">${['Добавь растения','Добавь ящики','Открой двери','Включи аварийное освещение'].map(text=>`<button type="button" data-world-example="${text}">${text}</button>`).join('')}</div></section><div class="universe-section-heading"><h3>Предметы на палубе</h3><span class="universe-muted">Подойдите ближе · E — взаимодействовать</span></div><p class="universe-note">Найдите предмет в 3D, перейдите в «Исследовать» и подойдите к нему. Контейнер можно взять и положить рядом с собой; дверь — открыть и закрыть.</p><div class="universe-object-list" id="universe-object-list"></div><p id="universe-event" class="universe-event"></p>`;
       this.body.querySelector('#universe-command-form').onsubmit=event=>{event.preventDefault();this.command();};
@@ -87,13 +117,17 @@ export class UniversePanel {
       const mine=object.held_by===me,held=Boolean(object.held_by),interactive=['door','crate'].includes(object.kind);
       const action=object.kind==='door'?'toggle':mine?'drop':'pickup';
       const label=object.kind==='door'?(object.open?'Закрыть':'Открыть'):mine?'Положить':'Взять';
-      const status=held?(mine?'У вас в руках':'У другого участника'):object.kind==='door'?(object.open?'Открыта':'Закрыта'):'На палубе';
-      return `<article class="universe-object"><div class="universe-object-icon" aria-hidden="true">${({door:'▥',crate:'▣',plant:'♧',beacon:'◉'})[object.kind]||'◇'}</div><div class="universe-object-copy"><strong>${escapeHTML(object.name||kinds[object.kind]||'Объект')}</strong><span>${escapeHTML(status)} · ${Number(object.x).toFixed(1)}, ${Number(object.z).toFixed(1)}</span></div><div class="universe-object-actions"><button type="button" class="secondary small" data-world-focus="${escapeHTML(object.id)}">Найти</button>${interactive?`<button type="button" class="secondary small" data-world-action="${action}" data-object-id="${escapeHTML(object.id)}" ${held&&!mine?'disabled':''}>${label}</button>`:''}${this.isAdmin?`<button type="button" class="universe-delete" data-world-remove="${escapeHTML(object.id)}" aria-label="Удалить ${escapeHTML(object.name||kinds[object.kind])}" ${held?'disabled':''}>×</button>`:''}</div></article>`;
+      const door=object.kind==='door'?describeDoor(object,now):null;
+      if(door?.remaining)nextDoorUpdate=Math.min(nextDoorUpdate,door.remaining);
+      const fixed=fixedDoors.has(object.id),disabled=held&&!mine||door?.disabled;
+      const status=held?(mine?'У вас в руках':'У другого участника'):door?door.status:'На палубе';
+      return `<article class="universe-object"><div class="universe-object-icon" aria-hidden="true">${({door:'▥',crate:'▣',plant:'♧',beacon:'◉'})[object.kind]||'◇'}</div><div class="universe-object-copy"><strong>${escapeHTML(object.name||kinds[object.kind]||'Объект')}</strong><span>${escapeHTML(status)} · ${Number(object.x).toFixed(1)}, ${Number(object.z).toFixed(1)}</span>${fixed&&this.isAdmin?'<small>Часть корпуса · удаление недоступно</small>':''}</div><div class="universe-object-actions"><button type="button" class="secondary small" data-world-focus="${escapeHTML(object.id)}">Найти</button>${interactive?`<button type="button" class="secondary small" data-world-action="${action}" data-object-id="${escapeHTML(object.id)}" ${disabled?'disabled':''}>${door?.disabled?escapeHTML(door.status):label}</button>`:''}${this.isAdmin&&!fixed?`<button type="button" class="universe-delete" data-world-remove="${escapeHTML(object.id)}" aria-label="Удалить ${escapeHTML(object.name||kinds[object.kind])}" ${held?'disabled':''}>×</button>`:''}</div></article>`;
     }).join('')||'<div class="universe-empty">Палуба свободна. Попросите наставника добавить объекты.</div>';
     this.body.querySelectorAll('[data-world-focus]').forEach(button=>button.onclick=()=>{this.close();this.ship()?.focusWorldObject?.(button.dataset.worldFocus);});
     this.body.querySelectorAll('[data-world-action]').forEach(button=>button.onclick=()=>this.interact({object_id:button.dataset.objectId,action:button.dataset.worldAction}));
     this.body.querySelectorAll('[data-world-remove]').forEach(button=>button.onclick=()=>this.mutate('universe.admin',{remove_id:button.dataset.worldRemove},'Объект удалён.'));
     this.body.querySelector('#universe-event').textContent=this.state.last_event?.text||'';
+    if(Number.isFinite(nextDoorUpdate))this.doorTimer=setTimeout(()=>{if(this.dialog.open&&this.tab==='objects')this.renderObjects();},nextDoorUpdate+25);
   }
   renderSettings(){
     if(!this.isAdmin||!this.state)return;
@@ -102,7 +136,18 @@ export class UniversePanel {
     for(const [id,suffix] of [['light','×'],['npc',''],['speed','×']])this.body.querySelector('#world-'+id).oninput=event=>this.body.querySelector('#world-'+id+'-value').textContent=event.target.value+suffix;
     this.body.querySelector('#world-color').oninput=event=>event.target.nextElementSibling.textContent=event.target.value;
     this.body.querySelector('#universe-settings-form').onsubmit=event=>{event.preventDefault();const val=id=>this.body.querySelector('#world-'+id).value;this.mutate('universe.admin',{expected_version:expectedVersion,settings:{ambient_color:val('color'),light_intensity:Number(val('light')),npc_count:Number(val('npc')),simulation_speed:Number(val('speed'))}},'Настройки вселенной сохранены.');};
-    this.body.querySelector('#universe-spawn-form').onsubmit=event=>{event.preventDefault();const positions={bridge:[2,1],cryo:[-14,1],reactor:[14,1],bio:[1,-15]};const [x,z]=positions[this.body.querySelector('#world-spawn-room').value];this.mutate('universe.admin',{spawn:{kind:this.body.querySelector('#world-spawn-kind').value,x,y:0,z}},'Объект добавлен на палубу.');};
+    const roomSelect=this.body.querySelector('#world-spawn-room');
+    roomSelect.innerHTML=compartments.map(area=>`<option value="${area.id}">${escapeHTML(area.name.replace(/^\d+\s*\/\s*/,''))}</option>`).join('');
+    this.body.querySelector('#universe-spawn-form').onsubmit=event=>{
+      event.preventDefault();const kind=this.body.querySelector('#world-spawn-kind').value;
+      const scene=this.ship(),occupied=[...(this.state.objects||[])];
+      for(const position of [scene?.player,...[...(scene?.remote?.values?.()||[])].map(player=>player.mesh?.position)]) {
+        if(position)occupied.push({kind:'crate',x:position.x,z:position.z});
+      }
+      const point=findSpawnPoint(this.body.querySelector('#world-spawn-room').value,occupied,kind);
+      if(!point){this.showStatus('В этом отсеке нет свободного места. Уберите предметы или выберите другой отсек.',true);return;}
+      this.mutate('universe.admin',{spawn:{kind,...point}},'Объект добавлен на палубу.');
+    };
   }
   renderAgents(){
     if(!this.isAdmin||!this.state||this.tab!=='agents')return;
@@ -156,5 +201,6 @@ export class UniversePanel {
     }finally{this.busy=false;this.dialog.removeAttribute('aria-busy');}
   }
   showStatus(message,error=false){const el=this.dialog.querySelector('#universe-feedback');if(el){el.textContent=message;el.classList.toggle('error',error);}}
-  dispose(){clearInterval(this.pollTimer);this.unsubscribers.forEach(unsubscribe=>unsubscribe());this.dialog.remove();this.button.remove();}
+  dispose(){clearInterval(this.pollTimer);clearTimeout(this.doorTimer);this.unsubscribers.forEach(unsubscribe=>unsubscribe());this.dialog.remove();this.button.remove();}
 }
+

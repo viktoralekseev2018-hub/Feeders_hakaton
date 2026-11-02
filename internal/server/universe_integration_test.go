@@ -152,6 +152,7 @@ func TestUniverseRealSocketsReplicationAuthorizationAndRestart(t *testing.T) {
 		t.Fatal(got.Type, string(got.Payload))
 	}
 	otherCode := prepareUniverseRoom(t, other, "other")
+	initialNPCCount := wireUniverse(t, universeExchange(t, owner, "universe.get", "initial-settings", map[string]any{})).Settings.NPCCount
 	admin := map[string]any{"expected_version": 1, "settings": map[string]any{"npc_count": 96, "light_intensity": 1.4}}
 	wireError(t, universeExchange(t, peer, "universe.admin", "peer-denied", admin), "forbidden")
 	state := wireUniverse(t, universeExchange(t, owner, "universe.admin", "owner-edit", admin))
@@ -162,6 +163,7 @@ func TestUniverseRealSocketsReplicationAuthorizationAndRestart(t *testing.T) {
 	if replicated.Settings.NPCCount != 96 || replicated.Settings.LightIntensity != 1.4 {
 		t.Fatal("peer did not receive environment edit")
 	}
+	initialObjectCount := len(state.Objects)
 	interaction := func(version int, action string) map[string]any {
 		return map[string]any{"expected_version": version, "object_id": "crate-cryo", "action": action}
 	}
@@ -182,13 +184,13 @@ func TestUniverseRealSocketsReplicationAuthorizationAndRestart(t *testing.T) {
 		t.Fatal(e.Type, string(e.Payload))
 	}
 	generated := awaitUniverse(t, peer, 5)
-	if len(generated.Objects) != 9 {
+	if len(generated.Objects) != initialObjectCount+4 {
 		t.Fatal("agent did not generate scene objects", len(generated.Objects))
 	}
 	// Network retries must not execute a world-changing chat instruction twice.
 	universeExchange(t, owner, "agent.talk", "grow-plants", command)
 	current := wireUniverse(t, universeExchange(t, owner, "universe.get", "after-retry", map[string]any{}))
-	if current.Version != 5 || len(current.Objects) != 9 {
+	if current.Version != 5 || len(current.Objects) != initialObjectCount+4 {
 		t.Fatal("chat replay duplicated objects")
 	}
 	universeExchange(t, owner, "universe.admin", "guard", map[string]any{"expected_version": 5, "agent": map[string]string{"id": "savinykh", "behavior": "guard"}})
@@ -233,7 +235,7 @@ func TestUniverseRealSocketsReplicationAuthorizationAndRestart(t *testing.T) {
 		}
 		if e.Type == "universe.state" {
 			u := wireUniverse(t, e)
-			if u.Version != 1 || u.Settings.NPCCount != 64 || len(u.Objects) != 5 {
+			if u.Version != 1 || u.Settings.NPCCount != initialNPCCount || len(u.Objects) != initialObjectCount {
 				t.Fatal("another room received edited universe", u)
 			}
 		}
@@ -254,7 +256,7 @@ func TestUniverseRealSocketsReplicationAuthorizationAndRestart(t *testing.T) {
 		t.Fatal(e.Type, string(e.Payload))
 	}
 	restored := wireUniverse(t, universeExchange(t, resumed, "universe.get", "restored", map[string]any{}))
-	if restored.Version != 6 || restored.Settings.NPCCount != 96 || len(restored.Objects) != 9 || restored.Agents[0].Behavior != "guard" || restored.Objects[1].Z != 1.2 {
+	if restored.Version != 6 || restored.Settings.NPCCount != 96 || len(restored.Objects) != initialObjectCount+4 || restored.Agents[0].Behavior != "guard" || restored.Objects[1].Z != 1.2 {
 		t.Fatal("restart lost room environment", restored)
 	}
 	afterRestart := universeExchange(t, resumed, "telemetry.get", "fresh-session", map[string]any{})
@@ -280,7 +282,7 @@ func TestUniverseRealSocketsReplicationAuthorizationAndRestart(t *testing.T) {
 	universeExchange(t, resumed, "room.reset", "reset-scope", map[string]any{})
 	resetEvent := universeExchange(t, resumed, "universe.get", "reset-snapshot", map[string]any{})
 	assertScope(resetEvent, code, 2)
-	if reset := wireUniverse(t, resetEvent); reset.Version != 1 || len(reset.Objects) != 5 {
+	if reset := wireUniverse(t, resetEvent); reset.Version != 1 || len(reset.Objects) != initialObjectCount {
 		t.Fatal("reset state wrong", reset)
 	}
 	assertScope(universeExchange(t, resumed, "telemetry.get", "reset-metrics", map[string]any{}), code, 2)

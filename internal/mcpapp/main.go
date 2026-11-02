@@ -19,6 +19,7 @@ import (
 	"feeders/internal/mcp"
 	"feeders/internal/mission"
 	"feeders/internal/rag"
+	"feeders/internal/retrievalconfig"
 )
 
 func Main(args []string) {
@@ -103,6 +104,13 @@ func Main(args []string) {
 				fmt.Println(rag.JSON(status))
 			}
 		} else {
+			// Metadata/check commands above intentionally leave DATA_DIR absent.
+			// Serving only configures/reads the cache; a search triggers bounded
+			// lazy embeddings, with the same environment and cache as the host.
+			if err = retrievalconfig.Configure(s, ""); err != nil {
+				fmt.Fprintln(os.Stderr, "chronograd-rag:", err)
+				os.Exit(1)
+			}
 			err = mcp.Serve(context.Background(), os.Stdin, os.Stdout, c)
 		}
 	}

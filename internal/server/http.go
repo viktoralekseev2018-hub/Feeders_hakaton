@@ -16,6 +16,10 @@ func New(files fs.FS, modules ...Routes) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { JSON(w, 200, map[string]string{"status": "ok"}) })
 	mux.HandleFunc("GET /api/host", func(w http.ResponseWriter, r *http.Request) {
+		if public := PublicURL(r); public != "" {
+			JSON(w, 200, map[string]any{"urls": []string{public}, "public_url": public, "https": true})
+			return
+		}
 		_, port, err := net.SplitHostPort(r.Host)
 		if err != nil {
 			port = "80"
@@ -66,11 +70,7 @@ func SameOrigin(r *http.Request) bool {
 	if err != nil {
 		return false
 	}
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	return u.Scheme == scheme && strings.EqualFold(u.Host, r.Host) && u.User == nil && u.RawQuery == "" && u.Fragment == "" && u.Path == ""
+	return strings.EqualFold(u.Scheme+"://"+u.Host, EffectiveOrigin(r)) && u.User == nil && u.RawQuery == "" && u.Fragment == "" && u.Path == "" && u.RawPath == ""
 }
 
 func JSON(w http.ResponseWriter, status int, body any) {

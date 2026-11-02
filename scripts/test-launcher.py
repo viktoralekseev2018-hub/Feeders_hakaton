@@ -49,6 +49,12 @@ def main():
                 "Unknown launcher flag was accepted or started the host")
         passed("unknown launcher flag is rejected")
 
+        for flag in ("--share", "--install-tunnel"):
+            result = run([flag, "--unexpected"])
+            require(result.returncode == 2 and "Use:" in result.stderr and not result.stdout,
+                    f"Extra arguments to {flag} were accepted")
+        passed("sharing and installation reject extra arguments before side effects")
+
         result = run(["--mcp", "-check"])
         require(result.returncode == 0 and not result.stderr, f"MCP corpus check failed: {result.stderr}")
         status = json.loads(result.stdout)

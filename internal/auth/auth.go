@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"feeders/internal/server"
 	"fmt"
 	"io"
 	"log/slog"
@@ -194,7 +195,7 @@ func (h *Handler) issue(w http.ResponseWriter, r *http.Request, u model.User) er
 		return err
 	}
 	h.mu.Unlock()
-	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: id, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: h.secure, MaxAge: int(h.ttl.Seconds()), Expires: expires})
+	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: id, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: h.secure || server.IsHTTPS(r), MaxAge: int(h.ttl.Seconds()), Expires: expires})
 	return nil
 }
 
@@ -225,7 +226,7 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 		}
 		h.mu.Unlock()
 	}
-	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: h.secure, MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: h.secure || server.IsHTTPS(r), MaxAge: -1})
 	respond(w, 200, map[string]bool{"success": true})
 }
 
